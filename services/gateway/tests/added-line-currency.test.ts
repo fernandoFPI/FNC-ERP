@@ -234,7 +234,7 @@ const submitReq = (reqId: string, added: Record<string, unknown>[]) =>
   resolvers.Mutation.submitPOEditRequest(
     null,
     { requisitionId: reqId, changes: JSON.stringify({ lines: { added } }) } as never,
-    ctxFor(requesterId, 'user'),
+    ctxFor(requesterId, 'system_admin'),
   ) as Promise<{ id: string; status: string }>
 
 const approveReq = (reqId: string, requestId: string) =>
@@ -248,7 +248,7 @@ const submitPO = (poId: string, added: Record<string, unknown>[]) =>
   resolvers.Mutation.submitPOEditRequest(
     null,
     { id: poId, changes: JSON.stringify({ lines: { added } }) } as never,
-    ctxFor(requesterId, 'user'),
+    ctxFor(requesterId, 'system_admin'),
   ) as Promise<{ id: string; status: string }>
 
 const approvePO = (poId: string, requestId: string) =>

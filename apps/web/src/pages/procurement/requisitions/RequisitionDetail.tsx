@@ -78,6 +78,7 @@ import {
 import { getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { poTotalEntries } from '../../../lib/poTotals'
 import { lineHandlerName } from '../../../lib/lineHandler'
+import { isEditAdminRole, requisitionNeedsAdminToChange } from '../../../lib/approvedEdit'
 import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveRequisitionEditRequestMutation,
@@ -412,6 +413,7 @@ export default function RequisitionDetail() {
   const { inputStyle, selectStyle } = denseFormStyles(theme, { rtl, dark: themeKey === 'black' })
   const { isSystemLevel } = usePermission()
   const currentUserId = useAuthStore((s) => s.user?.id)
+  const currentUserRole = useAuthStore((s) => s.user?.role)
   const addToast = useToastStore((s) => s.addToast)
   const padding = usePagePadding()
   const { isPhone } = useBreakpoint()
@@ -855,7 +857,12 @@ export default function RequisitionDetail() {
   // for that here, so this stays a bit narrower than the backend on
   // purpose: it only ever hides the button, never grants a capability
   // the backend wouldn't also allow).
-  const canRequestEdit = isSystemLevel || isOrganizer
+  // After approval only an administrator may change a requisition, or even ask (playbook #112): the organizer no longer can. Before approval
+  // nothing changes. Module administrators count, as on the server.
+  const adminOnlyNow = requisitionNeedsAdminToChange(req.status)
+  const canRequestEdit = adminOnlyNow
+    ? isEditAdminRole(currentUserRole)
+    : isSystemLevel || isOrganizer
 
   // ── The three pricing steps are filled in on the Lines table itself ──────
   // Lines that still need buying (what stock does not cover) take a market and a verified price;
@@ -2569,7 +2576,9 @@ export default function RequisitionDetail() {
                     {!editDraft && (
                       <div style={{ fontSize: '13px', color: theme.textMuted }}>
                         {!canRequestEdit
-                          ? t('req.detail.onlyTheOrganizerOrAnAdmin')
+                          ? adminOnlyNow
+                            ? t('req.detail.onlyAnAdminAfterApproval')
+                            : t('req.detail.onlyTheOrganizerOrAnAdmin')
                           : hasPendingEdit
                             ? t('req.detail.thereIsAlreadyAPendingEdit')
                             : t('req.detail.clickStartEditingToProposeChanges')}

@@ -115,7 +115,7 @@ async function editPrice(poId: string, lineId: string, from: number, to: number)
       id: poId,
       changes: JSON.stringify({ lines: { edited: [{ id: lineId, field: 'unit_price', from, to }] } }),
     } as never,
-    ctxFor(requesterId, 'user'),
+    ctxFor(requesterId, 'system_admin'),
   )) as { id: string; status: string }
   expect(req.status).toBe('pending') // a delivered PO needs an admin
   await resolvers.Mutation.approvePOEditRequest(
@@ -319,7 +319,7 @@ describe('a price edited after delivery re-prices what was delivered', () => {
     const req = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify({ lines: { removed: [lineIds[1]!] } }) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string }
     await resolvers.Mutation.approvePOEditRequest(null, { id: poId, requestId: req.id } as never, ctxFor(adminId))
     expect(await costRows([lineIds[1]!])).toEqual([])

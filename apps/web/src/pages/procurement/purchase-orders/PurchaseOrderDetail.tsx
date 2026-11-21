@@ -112,6 +112,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
 import { poTotalEntries } from '../../../lib/poTotals'
 import { poLineCurrency } from '../../../lib/poLineCurrency'
+import { isEditAdminRole, poNeedsAdminToChange } from '../../../lib/approvedEdit'
 import { receivableLocationsKeeping } from '../../../lib/receivingLocations'
 import { orderCoverage } from '../../../lib/poLineCoverage'
 import { ActivityTimeline } from '../../../components/procurement/ActivityTimeline'
@@ -5377,6 +5378,8 @@ export default function PurchaseOrderDetail() {
           }
 
           const hasPending = (po.edit_requests ?? []).some((r) => r.status === 'pending')
+          // After approval only an administrator may change a PO, or even ask (playbook #112). The server refuses anyone else.
+          const adminOnlyNow = poNeedsAdminToChange(po.status) && !isEditAdminRole(currentUserRole)
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -5419,7 +5422,7 @@ export default function PurchaseOrderDetail() {
                       {t('po.detail.requestAnEdit')}
                     </div>
                     {hasPending && <Badge variant="warning">{t('po.detail.pendingReviewSubmitLocked')}</Badge>}
-                    {!editDraft && !hasPending && (
+                    {!editDraft && !hasPending && !adminOnlyNow && (
                       <ActionButton
                         size="sm"
                         variant="outline"
@@ -5445,9 +5448,11 @@ export default function PurchaseOrderDetail() {
 
                   {!editDraft && (
                     <div style={{ fontSize: '14px', color: theme.textSecondary }}>
-                      {hasPending
-                        ? t('po.detail.thereIsAlreadyAPendingEdit')
-                        : t('po.detail.clickStartEditingToProposeChanges')}
+                      {adminOnlyNow
+                        ? t('po.detail.onlyAnAdminAfterApproval')
+                        : hasPending
+                          ? t('po.detail.thereIsAlreadyAPendingEdit')
+                          : t('po.detail.clickStartEditingToProposeChanges')}
                     </div>
                   )}
 

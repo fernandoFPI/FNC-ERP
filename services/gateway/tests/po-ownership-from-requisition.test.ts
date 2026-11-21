@@ -195,16 +195,13 @@ describe('the forked PO continues the requisition ownership', () => {
     expect(await owner(f.poId)).toEqual({ created_by: finisherId, organizer_id: null })
   })
 
-  it('the organizer, as a plain user with no admin role, can raise an edit request on the PO (the gate reads created_by)', async () => {
+  it('the organizer, as a plain user, can no longer ask for a change to the forked PO once it exists (after approval only an administrator may); an administrator can', async () => {
     const f = await forkRequisition()
-    const req = (await resolvers.Mutation.submitPOEditRequest(
-      null,
-      {
-        id: f.poId,
-        changes: JSON.stringify({ lines: { edited: [{ id: f.lineId, field: 'unit_price', from: 20, to: 25 }] } }),
-      } as never,
-      ctxFor(organizerId, 'user'),
-    )) as { id: string; status: string }
+    const changes = JSON.stringify({ lines: { edited: [{ id: f.lineId, field: 'unit_price', from: 20, to: 25 }] } })
+    await expect(
+      resolvers.Mutation.submitPOEditRequest(null, { id: f.poId, changes } as never, ctxFor(organizerId, 'user')),
+    ).rejects.toThrow(/Only an administrator can change an approved purchase order/)
+    const req = (await resolvers.Mutation.submitPOEditRequest(null, { id: f.poId, changes } as never, ctxFor(finisherId, 'system_admin'))) as { id: string }
     expect(req.id).toBeTruthy()
   })
 })

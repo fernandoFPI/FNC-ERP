@@ -99,11 +99,12 @@ interface Impact {
   failure?: string | null
 }
 
+// an approved document can only be changed through a request an ADMINISTRATOR files (playbook #112)
 const submit = async (poId: string, changes: unknown): Promise<{ id: string; status: string }> =>
   (await resolvers.Mutation.submitPOEditRequest(
     null,
     { id: poId, changes: JSON.stringify(changes) } as never,
-    ctxFor(requesterId, 'user'),
+    ctxFor(requesterId, 'system_admin'),
   )) as { id: string; status: string }
 
 const impactFor = async (requestId: string, as = ctxFor(adminId, 'system_admin')): Promise<Impact | null> =>

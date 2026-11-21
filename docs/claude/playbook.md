@@ -3689,3 +3689,50 @@ Don't re-derive, check these first.
     count. Tests: `TempStorePage.test.tsx` (open from a row, from a link, a cancelled transfer, an older one fetched by id, no
     fetch when listed, unknown id), `StoreHistoryPage.test.tsx` (transfer link carries the id), gateway `store-transfers.test.ts`
     (by id, another company, malformed id); 7 mutations killed. Related to #108, #109.
+112. **After approval only an administrator may change a requisition or a purchase order, and every fixture that modelled the
+    organizer as a plain user had to change with it.** The rule (the user's, with three answers to my questions): once a
+    requisition or PO is past approval, an employee, the organizer and the creator included, can neither edit it nor even
+    file an edit request; only a `system_admin`, `company_admin` or `module_admin` can (the same three roles that could already
+    approve or reject one). The two-step flow stays: an administrator files the request, an administrator approves it, and
+    it may be the same person. Before approval nothing changes: the organizer or an associated user still edits and it applies
+    at once (recorded as an auto-approved request). Buying, receiving, pricing, comments and the small setters (priority,
+    receiver, vendor) are NOT edit requests and are untouched. Five employee requests already pending on production were left
+    in the queue for an administrator (approve or reject as usual).
+    What it turned up.
+    (a) *The two documents had different kinds of gate.* The PO side already had an allow-list of statuses that may auto-apply
+    (`AUTO_APPLY_PO_STATUSES`, #33). The requisition side still had a DENY-list (`POST_APPROVAL_REQUISITION_STATUSES`), so a
+    status added later would have been open to everyone by omission. It is now an allow-list too
+    (`AUTO_APPLY_REQUISITION_STATUSES`, `requisitionEditNeedsApproval`), both in `services/gateway/src/lib/poEditApproval.ts`
+    with the roles (`EDIT_ADMIN_ROLES`, `isEditAdminRole`) and the one refusal sentence (`approvedEditRefusal`). A test reads
+    the `requisitions` and `purchase_orders` status CHECK constraints and fails until a status added there is classified.
+    (b) *The refusal comes before every other check in `submitPOEditRequest`.* A stranger and the organizer get the same
+    sentence ("Only an administrator can change an approved requisition. Ask an administrator to make the change."), not "you
+    are not associated with this PO", which would have been true for one and false for the other.
+    (c) *The page mirrors the rule and the server stays the authority* (the #58 / #30 pattern): `apps/web/src/lib/approvedEdit.ts`
+    holds copies of the roles and both lists, `approvedEdit.test.ts` reads the server file and fails if they differ, and the
+    two pages hide "Start editing" for a person the server would refuse and say why (`req.detail.onlyAnAdminAfterApproval`,
+    `po.detail.onlyAnAdminAfterApproval`, both languages, checked to sit in the group the page reads, #26). The requisition
+    page used to decide with `isSystemLevel || isOrganizer`; that cannot express "module admin", so after approval it asks
+    `isEditAdminRole(role)` instead.
+    (d) *Eleven older test files filed edit requests as the organizer or a plain user on an already approved document.* 78
+    gateway tests failed on the first run, every one a fixture, none a bug: they now file as an administrator
+    (`adminSubmits`), and two tests that asserted the OLD behaviour were rewritten, not patched: "an auto-applied request is
+    recognised by its flag" (now before approval) and the #66 test that proved the organizer passes the gate through
+    `created_by` (after approval the gate is the role, so it now proves an organizer who is not an admin is refused with the
+    administrator sentence). A rule change that removes a permission from a role is a fixture change in every suite that
+    exercised that permission: grep every `submitPOEditRequest` caller in `tests/` before running the suite, not after.
+    How to spot the class: a permission decided on the screen by one expression (`isSystemLevel || isOrganizer`) and on the
+    server by another (a scope query), so each answers a different question; an approval gate written as a list of statuses
+    that REQUIRE review (#33); a test fixture that makes the actor the owner of the document and so can never see a rule that
+    removes the owner's rights (#66 trap (i), same shape).
+    Not changed on purpose: the review queue (`pendingPOEditRequests`) still lists every pending request to an administrator,
+    including the five employee ones; a module admin is an administrator here for ALL modules (that is what the approve gate
+    already meant, so nobody gained the ability to approve); the mobile app has no edit-request screen.
+    Tests: `services/gateway/tests/edit-request-admin-only-after-approval.test.ts` (real Postgres through the real resolvers,
+    32: every post-approval status of both documents refused for an organizer and a stranger, every pre-approval status still
+    applying at once, the three administrator roles queueing a pending request, a legacy pending request approvable only by an
+    administrator, the CHECK-constraint classification and the lib agreeing; 11 mutations killed), the updated
+    `po-edit-request-approval-gate.test.ts` and ten more edit-request files, web `lib/__tests__/approvedEdit.test.ts`,
+    `RequisitionDetailAdminOnlyEdit.test.tsx` and the "who is offered it after approval" block in `poLineCurrencyPage.test.tsx`
+    (13 web mutations killed). Needs the gateway restarted and a hard refresh (#19). Not verified in a browser. Related to #33,
+    #58, #66, #26.

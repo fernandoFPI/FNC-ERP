@@ -98,11 +98,12 @@ interface StoredChanges {
 const storedChanges = async (requestId: string): Promise<StoredChanges> =>
   (await pool.query<{ changes: StoredChanges }>(`SELECT changes FROM po_edit_requests WHERE id=$1`, [requestId])).rows[0]!.changes
 
+// an approved document can only be changed through a request an ADMINISTRATOR files (playbook #112)
 const submit = (reqId: string, changes: unknown, as = requesterId) =>
   resolvers.Mutation.submitPOEditRequest(
     null,
     { requisitionId: reqId, changes: JSON.stringify(changes) } as never,
-    ctxFor(as, 'user'),
+    ctxFor(as, 'system_admin'),
   ) as Promise<{ id: string; status: string }>
 
 describe('submitting an edit request on an approved requisition', () => {

@@ -244,7 +244,7 @@ describe('submitPOEditRequest keeps the names of the lines it touches', () => {
     const res = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string; status: string; changes: string }
     expect(res.status).toBe('pending')
 
@@ -266,7 +266,7 @@ describe('submitPOEditRequest keeps the names of the lines it touches', () => {
     const res = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify({ lines: { removed: [boxId] } }) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string }
 
     await resolvers.Mutation.approvePOEditRequest(null, { id: poId, requestId: res.id } as never, ctxFor(adminId, 'system_admin'))
@@ -282,7 +282,7 @@ describe('submitPOEditRequest keeps the names of the lines it touches', () => {
     const res = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify({ lines: { removed: [boxId] } }) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string; status: string }
     expect(res.status).toBe('approved')
     const stored = await storedChanges(res.id)
@@ -295,7 +295,7 @@ describe('submitPOEditRequest keeps the names of the lines it touches', () => {
     const res = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify(changes) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string }
     expect(await storedChanges(res.id)).toEqual(changes)
   })
@@ -307,7 +307,7 @@ describe('the PO query returns what the history card needs', () => {
     await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify({ lines: { edited: [{ id: cableId, field: 'unit_price', from: 4500, to: 4800 }] } }) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )
     const [row] = await history(poId)
     expect(row?.status).toBe('approved')
@@ -322,7 +322,7 @@ describe('the PO query returns what the history card needs', () => {
     const res = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify({ lines: { removed: [boxId] } }) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string }
 
     const [pending] = await history(poId)
@@ -342,7 +342,7 @@ describe('the PO query returns what the history card needs', () => {
     const res = (await resolvers.Mutation.submitPOEditRequest(
       null,
       { id: poId, changes: JSON.stringify({ lines: { removed: [boxId] } }) } as never,
-      ctxFor(requesterId, 'user'),
+      ctxFor(requesterId, 'system_admin'),
     )) as { id: string }
     const row = await pool.query<{ review_notes: string }>(`SELECT review_notes FROM po_edit_requests WHERE id=$1`, [res.id])
     expect(row.rows[0]!.review_notes).toBe(AUTO_APPLIED_REVIEW_NOTE)

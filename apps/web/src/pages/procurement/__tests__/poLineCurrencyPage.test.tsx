@@ -10,6 +10,7 @@ import type * as ReactRouterDomModule from 'react-router-dom'
 import { Kind, visit } from 'graphql'
 import { ThemeProvider } from '../../../theme/ThemeContext'
 import { themes } from '../../../theme/tokens'
+import { useAuthStore } from '../../../store/authStore'
 import i18n from '../../../i18n'
 import { PO_LIFECYCLE_QUERY } from '../../../graphql/procurement'
 
@@ -319,7 +320,12 @@ describe('The purchase order query', () => {
 })
 
 describe('Edit PO form: the currency starts from what is stored', () => {
+  afterEach(() => {
+    useAuthStore.setState({ user: null })
+  })
+  // an approved PO can only be changed by an administrator (playbook #112), so the form is opened as one
   async function startEditing() {
+    useAuthStore.setState({ user: { id: 'u-admin', role: 'system_admin' } as never })
     mockPO('bought')
     await openPO()
     fireEvent.click(screen.getByRole('button', { name: /^Edit requests/ }))
@@ -362,7 +368,12 @@ describe('Edit PO form: the currency starts from what is stored', () => {
 })
 
 describe('Edit PO form: its boxes are in the shared field look', () => {
+  afterEach(() => {
+    useAuthStore.setState({ user: null })
+  })
+  // an approved PO can only be changed by an administrator (playbook #112), so the form is opened as one
   async function startEditing() {
+    useAuthStore.setState({ user: { id: 'u-admin', role: 'system_admin' } as never })
     mockPO('bought')
     await openPO()
     fireEvent.click(screen.getByRole('button', { name: /^Edit requests/ }))
@@ -414,5 +425,53 @@ describe('Edit PO form: its boxes are in the shared field look', () => {
     if (!label) throw new Error('no Notes label')
     expect(label).toHaveStyle({ color: light.textSecondary, fontSize: '12px' })
     expect(label.style.textTransform).toBe('')
+  })
+})
+
+describe('Edit PO form: who is offered it after approval (playbook #112)', () => {
+  const REFUSAL =
+    'Only an administrator can change an approved purchase order. Ask an administrator to make the change.'
+  async function openAs(role: string, status: string) {
+    useAuthStore.setState({ user: { id: 'u-test', role } as never })
+    mockPO(status)
+    await openPO()
+    fireEvent.click(screen.getByRole('button', { name: /^Edit requests/ }))
+  }
+  afterEach(async () => {
+    useAuthStore.setState({ user: null })
+    if (i18n.language !== 'en') await i18n.changeLanguage('en')
+  })
+
+  it('does not offer a plain user "Start editing" on an approved PO, and says why', async () => {
+    await openAs('user', 'bought')
+    expect(screen.queryByRole('button', { name: 'Start editing' })).toBeNull()
+    expect(screen.getByText(REFUSAL)).toBeInTheDocument()
+  })
+
+  it.each(['system_admin', 'company_admin', 'module_admin'])(
+    'offers a %s "Start editing" on an approved PO',
+    async (role) => {
+      await openAs(role, 'bought')
+      expect(screen.getByRole('button', { name: 'Start editing' })).toBeInTheDocument()
+      expect(screen.queryByText(REFUSAL)).toBeNull()
+    },
+  )
+
+  it('still offers a plain user "Start editing" before approval, where the edit applies at once', async () => {
+    await openAs('user', 'draft')
+    expect(screen.getByRole('button', { name: 'Start editing' })).toBeInTheDocument()
+    expect(screen.queryByText(REFUSAL)).toBeNull()
+  })
+
+  it('says it in Arabic, with no raw key on the page', async () => {
+    await i18n.changeLanguage('ar')
+    useAuthStore.setState({ user: { id: 'u-test', role: 'user' } as never })
+    mockPO('bought')
+    await openPO()
+    fireEvent.click(screen.getByRole('button', { name: /طلبات التعديل/ }))
+    expect(document.body.textContent).not.toMatch(/po\.detail\.onlyAnAdminAfterApproval/)
+    expect(
+      screen.getByText(/يمكن للمسؤول فقط تعديل أمر الشراء بعد الموافقة عليه/),
+    ).toBeInTheDocument()
   })
 })

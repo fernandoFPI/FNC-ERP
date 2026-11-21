@@ -98,6 +98,14 @@ const requesterSubmits = (poId: string, lineId: string) =>
     ctxFor(requesterId, 'user'),
   ) as Promise<{ id: string; status: string; reviewed_by: string | null }>
 
+// after approval only an administrator may ask (playbook #112), so the requests that must WAIT for approval are filed by one
+const adminSubmits = (poId: string, lineId: string) =>
+  resolvers.Mutation.submitPOEditRequest(
+    null,
+    { id: poId, changes: qtyEdit(lineId) } as never,
+    ctxFor(adminId, 'system_admin'),
+  ) as Promise<{ id: string; status: string; reviewed_by: string | null }>
+
 async function qty(lineId: string): Promise<number> {
   const r = await pool.query<{ qty_ordered: string }>(
     `SELECT qty_ordered FROM po_lines WHERE id=$1`,
@@ -166,10 +174,25 @@ describe('submitPOEditRequest, requester role (not an admin)', () => {
   })
 
   it.each(NEEDS_APPROVAL)(
-    'queues for admin approval and changes nothing while the PO is %s',
+    'is refused, with nothing queued and nothing changed, while the PO is %s (after approval only an administrator may ask)',
     async (status) => {
       const { poId, lineId } = await makePO(status)
-      const out = await requesterSubmits(poId, lineId)
+      await expect(requesterSubmits(poId, lineId)).rejects.toThrow(
+        /Only an administrator can change an approved purchase order/,
+      )
+      expect(await qty(lineId)).toBe(1)
+      const queued = await pool.query(`SELECT 1 FROM po_edit_requests WHERE po_id=$1`, [poId])
+      expect(queued.rows).toHaveLength(0)
+    },
+  )
+})
+
+describe('submitPOEditRequest, an administrator asking after approval', () => {
+  it.each(NEEDS_APPROVAL)(
+    'queues for approval and changes nothing while the PO is %s',
+    async (status) => {
+      const { poId, lineId } = await makePO(status)
+      const out = await adminSubmits(poId, lineId)
       expect(out.status).toBe('pending')
       expect(out.reviewed_by).toBeNull()
       expect(await qty(lineId)).toBe(1) // not applied
@@ -185,7 +208,7 @@ describe('submitPOEditRequest, requester role (not an admin)', () => {
 describe('the case that was reported: a child PO in Finance review', () => {
   it('stays pending until an admin approves it, then applies and is logged as approved by the admin', async () => {
     const { poId, lineId } = await makePO('finance_review')
-    const submitted = await requesterSubmits(poId, lineId)
+    const submitted = await adminSubmits(poId, lineId)
     expect(submitted.status).toBe('pending')
     expect(await qty(lineId)).toBe(1)
 
@@ -211,7 +234,7 @@ describe('the case that was reported: a child PO in Finance review', () => {
 
   it('an admin can also reject it, leaving the line untouched', async () => {
     const { poId, lineId } = await makePO('bought')
-    const submitted = await requesterSubmits(poId, lineId)
+    const submitted = await adminSubmits(poId, lineId)
     await resolvers.Mutation.rejectPOEditRequest(
       null,
       { id: poId, requestId: submitted.id, reviewNotes: 'not warranted' } as never,

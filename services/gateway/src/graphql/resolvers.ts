@@ -69,7 +69,12 @@ import {
   PROJECT_FILE_TAB_PERMISSION,
   type ProjectFileTab,
 } from '../lib/projectFiles.js'
-import { poEditNeedsApproval } from '../lib/poEditApproval.js'
+import {
+  approvedEditRefusal,
+  isEditAdminRole,
+  poEditNeedsApproval,
+  requisitionEditNeedsApproval,
+} from '../lib/poEditApproval.js'
 import {
   addDirectDeliveryCost,
   repriceDirectDeliveryCost,
@@ -1000,19 +1005,8 @@ async function applyPOEditChanges(
   return detached
 }
 
-// G1 Phase 3 Milestone A — requisition equivalent of the PO rule in
-// lib/poEditApproval.ts, same reasoning: once a requisition has been approved, an edit needs
-// review rather than auto-applying. 'rejected' is included for the same
-// conservative reason the PO list includes 'cancelled' — the current
-// status alone can't tell "cancelled before approval" from "cancelled
-// after," so this errs toward requiring review.
-const POST_APPROVAL_REQUISITION_STATUSES = [
-  'approved',
-  'items_bought',
-  'sourcing',
-  'completed',
-  'cancelled',
-]
+// Whether a requisition edit applies at once or needs an administrator's review, and who may ask for one after approval, is decided in
+// lib/poEditApproval.ts (requisitionEditNeedsApproval, isEditAdminRole), the same rule as for purchase orders.
 
 // Requisition equivalent of applyPOEditChanges. Deliberately narrower:
 // no vendor_id/analytic_account_id/currency_code header fields (none
@@ -34915,7 +34909,7 @@ const phase5MutationResolvers = {
   // requisitionId, matching po_edit_requests' own XOR (migration 258).
   // The PO branch below is completely unchanged from before this PR;
   // the requisitionId branch is new, added alongside it, mirroring its
-  // structure with applyRequisitionEditChanges/POST_APPROVAL_REQUISITION_STATUSES/
+  // structure with applyRequisitionEditChanges/requisitionEditNeedsApproval/
   // requisition_approval_log standing in for their PO equivalents.
   submitPOEditRequest: async (
     _: unknown,
@@ -34923,7 +34917,7 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const isAdminRole = ['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)
+    const isAdminRole = isEditAdminRole(ctx.auth.role)
 
     let changesObj: unknown
     try {
@@ -34940,6 +34934,11 @@ const phase5MutationResolvers = {
       ])
       if (!reqRow.rows[0]) throw new Error('Requisition not found')
       const reqStatus = (reqRow.rows[0] as { status: string }).status
+
+      // After approval only an administrator may change the requisition, or even ask (playbook #112). Refused here, before the
+      // scope check and before anything is written, so the person is told why and nothing is queued.
+      if (requisitionEditNeedsApproval(reqStatus) && !isAdminRole)
+        throw new Error(approvedEditRefusal('requisition'))
 
       if (!isAdminRole) {
         const scope = await query(
@@ -34975,7 +34974,7 @@ const phase5MutationResolvers = {
       // is refused here, to the person asking, not when somebody approves (see resolveAddedLineCurrency).
       changesObj = stampAddedLineCurrencies(changesObj as EditChanges, reqLines.rows)
 
-      if (!POST_APPROVAL_REQUISITION_STATUSES.includes(reqStatus)) {
+      if (!requisitionEditNeedsApproval(reqStatus)) {
         const client = await pool.connect()
         let row: Record<string, unknown>
         try {
@@ -35072,6 +35071,10 @@ const phase5MutationResolvers = {
     ])
     if (!poRow.rows[0]) throw new Error('PO not found')
     const poStatus = (poRow.rows[0] as { status: string }).status
+
+    // Same rule as for a requisition above: after approval only an administrator may change a PO or ask for a change.
+    if (poEditNeedsApproval(poStatus) && !isAdminRole)
+      throw new Error(approvedEditRefusal('purchase order'))
 
     if (!isAdminRole) {
       const scope = await query(
@@ -35182,7 +35185,7 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const isAdminRole = ['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)
+    const isAdminRole = isEditAdminRole(ctx.auth.role)
     if (!isAdminRole) throw new Error('Admin role required')
 
     if (args.requisitionId) {
@@ -35277,7 +35280,7 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const isAdminRole = ['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)
+    const isAdminRole = isEditAdminRole(ctx.auth.role)
     if (!isAdminRole) throw new Error('Admin role required')
     if (!args.reviewNotes.trim()) throw new Error('reviewNotes is required when rejecting')
 

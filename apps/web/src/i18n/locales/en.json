@@ -540,7 +540,8 @@
       "auditCheckOf": "Check: {{item}}",
       "auditChecked": "Lines checked: {{done}} of {{total}}",
       "auditAllOk": "Every line is checked and OK",
-      "auditFlaggedN": "Flagged: {{n}}"
+      "auditFlaggedN": "Flagged: {{n}}",
+      "onlyAnAdminAfterApproval": "Only an administrator can change an approved purchase order. Ask an administrator to make the change."
     },
     "editReq": {
       "appliedAutomatically": "Applied straight away: the PO had not been approved yet, so no review was needed.",
@@ -1441,7 +1442,8 @@
       "whatSWrongWithThisLine": "What's wrong with this line?",
       "whyIsThisRequisitionBeingCancelled": "Why is this requisition being cancelled?",
       "wrongItemReselect": "Wrong item? Reselect",
-      "linesAlwaysVisible": "Item, Qty and Total always stay visible"
+      "linesAlwaysVisible": "Item, Qty and Total always stay visible",
+      "onlyAnAdminAfterApproval": "Only an administrator can change an approved requisition. Ask an administrator to make the change."
     },
     "advanceStatus": {
       "draft": "Draft",

@@ -97,7 +97,7 @@ async function editLine(reqId: string, lineId: string, field: string, from: numb
   const submitted = (await resolvers.Mutation.submitPOEditRequest(
     null,
     { requisitionId: reqId, changes: JSON.stringify({ lines: { edited: [{ id: lineId, field, from, to }] } }) } as never,
-    ctxFor(requesterId, 'user'),
+    ctxFor(requesterId, 'system_admin'),
   )) as { id: string; status: string }
   if (approveAsAdmin) {
     expect(submitted.status).toBe('pending')

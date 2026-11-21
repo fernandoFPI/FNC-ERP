@@ -37,3 +37,43 @@ export const AUTO_APPLY_PO_STATUSES: readonly POStatus[] = [
 export function poEditNeedsApproval(status: string): boolean {
   return !(AUTO_APPLY_PO_STATUSES as readonly string[]).includes(status)
 }
+
+// ── Who may change a document once it is approved (playbook #112) ────────────────────────────────────────────────────
+//
+// Before approval, the people who work on a requisition or PO edit it and the edit applies at once (above). AFTER approval only an
+// administrator may change it, and only through the edit request flow (file, then approve): an employee can neither edit nor ask.
+// One rule, used by the submit resolver for both documents, so the two cannot drift and the screens' gates mirror one list.
+
+/** Who counts as an administrator for edit requests: the roles that could already approve or reject one. */
+export const EDIT_ADMIN_ROLES = ['system_admin', 'company_admin', 'module_admin'] as const
+
+export function isEditAdminRole(role: string | null | undefined): boolean {
+  return (EDIT_ADMIN_ROLES as readonly string[]).includes(role ?? '')
+}
+
+/**
+ * The requisition statuses where an edit applies at once: the ones before approval. An ALLOW-list for the same reason as the PO one above:
+ * it used to be a deny-list of the post-approval statuses (`POST_APPROVAL_REQUISITION_STATUSES`), so a status added later would have
+ * been editable by anyone by omission. The statuses are the requisitions CHECK constraint; a test fails until a new one is classified.
+ *  - 'rejected' and 'deleted' keep applying at once, as they always have.
+ *  - 'cancelled' needs approval even though it can be reached before approval, for the same reason as a cancelled PO.
+ */
+export const AUTO_APPLY_REQUISITION_STATUSES: readonly string[] = [
+  'draft',
+  'inventory_check',
+  'store_pricing',
+  'market_pricing',
+  'price_verification',
+  'pending_approval',
+  'rejected',
+  'deleted',
+]
+
+export function requisitionEditNeedsApproval(status: string): boolean {
+  return !AUTO_APPLY_REQUISITION_STATUSES.includes(status)
+}
+
+/** What a non-administrator is told when they try to change an approved document. */
+export function approvedEditRefusal(kind: 'requisition' | 'purchase order'): string {
+  return `Only an administrator can change an approved ${kind}. Ask an administrator to make the change.`
+}

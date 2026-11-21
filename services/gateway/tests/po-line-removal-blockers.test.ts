@@ -214,7 +214,7 @@ const submitRemoval = (poId: string, lineId: string) =>
   resolvers.Mutation.submitPOEditRequest(
     null,
     { id: poId, changes: JSON.stringify({ lines: { removed: [lineId] } }) } as never,
-    ctxFor(requesterId, 'user'),
+    ctxFor(requesterId, 'system_admin'),
   ) as Promise<{ id: string; status: string }>
 
 const approve = (poId: string, requestId: string) =>
