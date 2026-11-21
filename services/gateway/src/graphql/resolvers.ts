@@ -14539,7 +14539,9 @@ export const resolvers = {
           [i.linkedProjectId, ctx.auth.companyId],
         )
         const pr = projCheck.rows[0] as Record<string, unknown> | undefined
-        if (pr && (pr.is_rfq === true || pr.is_rfq === 't' || pr.is_rfq === 'true')) {
+        // The lookup is scoped by company: no row means another company's project (or none) (playbook #114).
+        if (!pr) throw new Error('Project not found')
+        if (pr.is_rfq === true || pr.is_rfq === 't' || pr.is_rfq === 'true') {
           if (
             !['approved', 'completed', 'cancelled_after_approval'].includes(pr.status as string)
           ) {
@@ -35454,7 +35456,7 @@ const phase5MutationResolvers = {
     // branch's default; account has no purpose/branch-specific mapping in
     // the schema, so it's always the one company-wide default.
     const [projectRow, branchRow, sysConfigRow, companyRow] = await Promise.all([
-      (i.purpose === 'project' || directSupply) && i.project_id
+      i.project_id
         ? query<{ cost_center_id: string | null }>(
             `SELECT cost_center_id FROM projects WHERE id=$1 AND company_id=$2`,
             [i.project_id, ctx.auth.companyId],
@@ -35475,11 +35477,16 @@ const phase5MutationResolvers = {
         [ctx.auth.companyId],
       ),
     ])
-    // The project must be one of the caller's own company's: that query is scoped by company, so no row means a
-    // project of another company (or none). Project Supply has never checked this at creation.
-    if (directSupply && !projectRow.rows[0]) throw new Error('Project not found')
+    // A requisition belongs to ONE company and so must everything it points at. Both lookups above are scoped by
+    // company, so no row means the project / branch is another company's (or does not exist). Without this, a form
+    // left open across a company switch filed a Yakam requisition on a Factory project (playbook #114).
+    if (i.project_id && !projectRow.rows[0]) throw new Error('Project not found')
+    if (i.branch_id && !branchRow.rows[0]) throw new Error('Branch not found')
+    // The project's own cost center is used for Project Supply only, as before; every other purpose uses the branch's.
+    const projectCostCenterId =
+      i.purpose === 'project' || directSupply ? (projectRow.rows[0]?.cost_center_id ?? null) : null
     const defaultCostCenterId =
-      projectRow.rows[0]?.cost_center_id ?? branchRow.rows[0]?.default_cost_center_id ?? null
+      projectCostCenterId ?? branchRow.rows[0]?.default_cost_center_id ?? null
     const defaultAccountId = sysConfigRow.rows[0]?.default_unallocated_purchase_account_id ?? null
     // A company that doesn't run its own inventory (requires_jobsite_delivery
     // — see 301_requires_jobsite_delivery) can't choose 'inventory' at all;
