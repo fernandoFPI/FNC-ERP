@@ -1843,6 +1843,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     case 'REQ_STORE_PRICING_REQUIRED':
     case 'REQ_MARKET_PRICING_REQUIRED':
     case 'REQ_PRICE_VERIFICATION_REQUIRED':
+    case 'REQ_STALE_STOCK_COST':
     case 'REQ_APPROVAL_REQUIRED': {
       const reqRes = await pool.query<{
         company_id: string
@@ -1892,7 +1893,11 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
               <div style="padding:24px;background:white">
                 <p style="font-size:14px;color:#374151">${body}</p>
                 <p style="font-size:13px;color:#374151">
-                  Requisition <strong>${row.requisition_number}</strong> is waiting on you.
+                  ${
+                    event.event_type === 'REQ_STALE_STOCK_COST'
+                      ? `Requisition <strong>${row.requisition_number}</strong> has a store price to double-check.`
+                      : `Requisition <strong>${row.requisition_number}</strong> is waiting on you.`
+                  }
                 </p>
                 <div style="text-align:center;margin:28px 0">
                   <a href="${requisitionUrl}"

@@ -2443,6 +2443,7 @@ export type Mutation = {
   confirmReceipt: PoReceipt;
   confirmRechargeReceipt: RechargeRequest;
   confirmRequisitionInventoryCheck: Requisition;
+  confirmRequisitionStockCost: Scalars['Boolean']['output'];
   confirmUpload: GqlFile;
   createAccount: Account;
   createAccountingPeriod: AccountingPeriod;
@@ -3333,6 +3334,12 @@ export type MutationConfirmRequisitionInventoryCheckArgs = {
   id: Scalars['ID']['input'];
   lineStockQtys: Array<StockConfirmLineInput>;
   notes?: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type MutationConfirmRequisitionStockCostArgs = {
+  productId: Scalars['ID']['input'];
+  requisitionId: Scalars['ID']['input'];
 };
 
 
@@ -6260,8 +6267,10 @@ export type PoLine = {
   closed_at?: Maybe<Scalars['String']['output']>;
   closed_by?: Maybe<Scalars['ID']['output']>;
   closed_reason?: Maybe<Scalars['String']['output']>;
+  cost_age_days?: Maybe<Scalars['Int']['output']>;
   cost_center_id?: Maybe<Scalars['ID']['output']>;
   cost_center_name?: Maybe<Scalars['String']['output']>;
+  cost_stale?: Maybe<Scalars['Boolean']['output']>;
   currency_code?: Maybe<Scalars['String']['output']>;
   description?: Maybe<Scalars['String']['output']>;
   flag_addressed_at?: Maybe<Scalars['String']['output']>;

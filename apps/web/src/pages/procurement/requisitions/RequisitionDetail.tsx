@@ -10,6 +10,7 @@ import {
   SUBMIT_REQUISITION_TO_INVENTORY_CHECK,
   SUBMIT_REQUISITION_DIRECT_SUPPLY,
   CONFIRM_REQUISITION_INVENTORY_CHECK,
+  CONFIRM_REQUISITION_STOCK_COST,
   SUBMIT_REQUISITION_STORE_PRICING,
   SUBMIT_REQUISITION_MARKET_PRICING,
   SET_REQUISITION_LINE_OWNER,
@@ -52,6 +53,7 @@ import { PhaseBar } from '../../../components/procurement/PhaseBar'
 import { StageActionBar } from '../../../components/procurement/StageActionBar'
 import { LinePriceInput } from '../../../components/procurement/LinePriceInput'
 import { InlineSelect } from '../../../components/procurement/InlineSelect'
+import { StaleCostNotice } from '../../../components/procurement/StaleCostNotice'
 import { ActivityTimeline } from '../../../components/procurement/ActivityTimeline'
 import { OverflowMenu } from '../../../components/procurement/OverflowMenu'
 import {
@@ -78,6 +80,7 @@ import {
 import { getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { poTotalEntries } from '../../../lib/poTotals'
 import { lineHandlerName } from '../../../lib/lineHandler'
+import { isStaleStockLine, staleCostItems } from '../../../lib/staleStockCost'
 import { useToastStore } from '../../../store/toastStore'
 import type {
   ApproveRequisitionEditRequestMutation,
@@ -178,6 +181,9 @@ interface ReqLine {
   /** The catalog product's own Cost right now, for reference (not what the store keeper typed). */
   inventory_cost?: string | null
   inventory_cost_currency?: string | null
+  /** Stale stock cost (playbook #111): days since the item's Cost was last changed or confirmed, and whether that is over the limit. */
+  cost_age_days?: number | null
+  cost_stale?: boolean | null
   market_price?: string | null
   market_price_currency?: string | null
   verified_price?: string | null
@@ -454,6 +460,18 @@ export default function RequisitionDetail() {
     ConfirmRequisitionInventoryCheckMutation,
     ConfirmRequisitionInventoryCheckMutationVariables
   >(CONFIRM_REQUISITION_INVENTORY_CHECK, mutOpts)
+  // Stale stock cost (playbook #111): "Price confirmed" restarts one item's 30-day clock. The page refetches, so the flag clears.
+  const [confirmingCostProductId, setConfirmingCostProductId] = useState<string | null>(null)
+  const [confirmStockCost] = useMutation(CONFIRM_REQUISITION_STOCK_COST, {
+    onCompleted: () => {
+      setConfirmingCostProductId(null)
+      void refetch()
+    },
+    onError: (e: Error) => {
+      setConfirmingCostProductId(null)
+      onErr(e)
+    },
+  })
   const [submitStorePricing, { loading: lStore }] = useMutation<
     SubmitRequisitionStorePricingMutation,
     SubmitRequisitionStorePricingMutationVariables
@@ -984,6 +1002,14 @@ export default function RequisitionDetail() {
     const selectedLoc = availOf(l)?.byLocation.find((loc) => loc.locationId === invLoc[l.id])
     return selectedLoc ? Math.min(qtyNeeded, selectedLoc.qtyAvailable) : qtyNeeded
   }
+  // Stale stock cost (playbook #111): a line drawn from stock whose item's Cost is old. At the inventory check the quantity is the one being
+  // typed (a replaced item is not judged: the server's age belongs to the original); everywhere else it is the saved quantity.
+  const isStaleLine = (l: ReqLine) =>
+    isStaleStockLine(l, {
+      liveQty: invEntry ? parseFloat(invQty[l.id] ?? '0') || 0 : undefined,
+      overridden: !!productOverride[l.id],
+    })
+  const staleItems = staleCostItems(req.lines, (l) => isStaleLine(l as ReqLine))
   const invCovered = req.lines.filter((l) => {
     const needed = parseFloat(l.qty) || 0
     return needed > 0 && (parseFloat(invQty[l.id] ?? '0') || 0) >= needed - 0.0001
@@ -1165,6 +1191,13 @@ export default function RequisitionDetail() {
             </div>
           )}
           {l.sku && <div style={{ fontSize: '12px', color: theme.textSecondary }}>{l.sku}</div>}
+          {isStaleLine(l) && (
+            <div data-testid="stale-cost-tag" style={{ marginTop: '4px' }}>
+              <Badge variant="warning">
+                {t('req.detail.staleCostTag', { days: l.cost_age_days ?? '' })}
+              </Badge>
+            </div>
+          )}
           {invEntry && reselectControl(l)}
         </div>
       ),
@@ -2208,6 +2241,15 @@ export default function RequisitionDetail() {
                   : sectionCard
               }
             >
+              <StaleCostNotice
+                items={staleItems}
+                canConfirm={canConfirmInventory}
+                confirmingProductId={confirmingCostProductId}
+                onConfirm={(productId) => {
+                  setConfirmingCostProductId(productId)
+                  void confirmStockCost({ variables: { requisitionId: req.id, productId } })
+                }}
+              />
               <div
                 style={{
                   display: 'flex',
@@ -2245,7 +2287,13 @@ export default function RequisitionDetail() {
                       background: `${theme.accent}0c`,
                     }
                   }
-                  if (!l.flag_reason || l.flag_resolved_at) return {}
+                  if (!l.flag_reason || l.flag_resolved_at)
+                    return isStaleLine(l)
+                      ? {
+                          borderInlineStart: `4px solid ${theme.warning}`,
+                          background: `${theme.warning}12`,
+                        }
+                      : {}
                   const open = !l.flag_addressed_at
                   const color = open ? theme.danger : theme.warning
                   return { borderInlineStart: `4px solid ${color}`, background: `${color}0c` }

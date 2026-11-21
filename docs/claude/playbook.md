@@ -3689,3 +3689,61 @@ Don't re-derive, check these first.
     count. Tests: `TempStorePage.test.tsx` (open from a row, from a link, a cancelled transfer, an older one fetched by id, no
     fetch when listed, unknown id), `StoreHistoryPage.test.tsx` (transfer link carries the id), gateway `store-transfers.test.ts`
     (by id, another company, malformed id); 7 mutations killed. Related to #108, #109.
+
+111. **A price copied from a field nobody looks at, and an alert that would have fired on 94 % of the catalogue.** The request:
+    "if an item is covered from stock and its price has not moved for more than a month, flag it, alert the store keeper, highlight the
+    item and say to double check its store price." What reading the code and the data showed before anything was built:
+    (a) *Store Pricing is no longer a human step.* `confirmRequisitionInventoryCheck` copies `products.standard_cost` (falling back to the
+    location's last cost) into each from-stock line's `store_price` and moves straight on, so the "store price" that can go stale is the
+    product's own Cost, not a figure anyone typed (the two figures called "store price" of #43). (b) `product_cost_history` logs only REAL
+    changes (a save that changes nothing returns early) and only since 20 Sept 2026 (migration 282), so for most products "last changed" is
+    unknown and the creation day is the only date there is. (c) Sizing on production, read-only, 2026-11-21: of 667 stock-covered
+    requisition lines in 90 days, 27 % had a Cost older than 30 days (Al Watanyia 66 %, Nishtimani Factory 23 %, Yakam 18 %), and 1,716 of
+    the 1,833 products holding stock (94 %) had not changed in 30 days. A bare "unchanged for 30 days" rule would flag about one line in
+    four, and the same stable items every time: an alert people learn to ignore. So the flag needs a way to say "I checked, it is right".
+    Design (the user's answers): the clock restarts on a real Cost change OR on a store keeper's **Price confirmed** (migration 328,
+    `products.cost_confirmed_at / cost_confirmed_by`, nullable, additive; mutation `confirmRequisitionStockCost`). Its gate is the inventory
+    check's own (a Store Keeper of THAT requisition, or an admin: `hasProcurementAuthorityGW` / `userHasPositionForRequisitionGW`), the
+    requisition must be the caller's company's, the product must be on one of its lines (so it can never touch an arbitrary product), and it
+    is audited (`CONFIRM_STOCK_COST`); it changes neither the Cost nor its history. The alert is on screen at the Inventory Check (the line
+    is tagged and tinted as the quantity is typed, and a notice above the lines lists each item with its age, a link to the item and the
+    button) plus a notification, `REQ_STALE_STOCK_COST`, to the store keepers of the requisition when the check is confirmed: only items
+    actually saved as drawn from stock, one entry per item however many lines draw on it, the person who confirmed left out (they saw it
+    on screen). Nothing is blocked.
+    ONE rule, `services/gateway/src/lib/staleStockCost.ts`: the AGE of a Cost is the whole days since the newest of its last change, its last
+    confirmation and, with neither, the product's creation day (`GREATEST` ignores NULLs); stale is more than 30 days (`STOCK_COST_STALE_DAYS`,
+    a constant like `TEMP_WAIT_DAYS`, not a company setting) while the requisition is in an ALLOW-listed stage (inventory check to sourcing:
+    a finished requisition would only age for ever). The test reads `requisitions` CHECK and fails until a status added later is classified
+    watched or unwatched (#33). The requisition lines reader returns `cost_age_days` and `cost_stale`, nullable (#38); the PO lines reader
+    deliberately does not (a child PO's lines are bought, not drawn from stock). Whether a line is actually drawn from stock is the SCREEN's
+    question (`lib/staleStockCost.ts` on the web): at the Inventory Check the quantity is typed and saved only on confirm, so the page
+    combines the server's flag with the quantity it holds; an item the keeper replaced at the check is not judged (the server's age belongs
+    to the original; the notification covers the replacement because it reads after the commit). The web's limit is a mirror pinned to the
+    server file by a test (#58 pattern).
+    How to spot the class: an alert or flag built on "has not changed for N days" over data most rows legitimately never change (size it
+    on production first: what share would it flag?); a derived figure whose real source is a column no screen shows (find what the
+    copy comes from before deciding what can be stale); a history table that starts later than the data (a missing row means "unknown",
+    not "never").
+    Traps met. (1) A new `REQ_*` notice with no worker `case` is only logged and marked delivered (#60): the case was added at once and
+    `req-notification-handlers.test.ts` covers it; the email line "is waiting on you" is wrong for this notice, so the worker has its own
+    sentence for the type. (2) A mutation that took the confirmer out of the recipients SURVIVED: the administrator who confirms in the
+    test never holds the Store Keeper position, so they were never a recipient anyway; the test needs a keeper who confirms and a second
+    keeper who is told. (3) A "keeps the oldest age" web test passed when the code kept the LAST age because the fixture listed ages in
+    ascending order; put the oldest first. (4) A literal `new URL('../x', import.meta.url)` in a Vitest file is rewritten by Vite and
+    refused (#88d): `path.resolve(__dirname, ...)`. (5) A mocked `useMutation` hides what the page does when the call finishes: capture
+    the options the page passed (`onCompleted`, `onError`) and call them, or the refetch that clears the flag and the release of the
+    busy button are untested (two mutations survived until then). (6) The lint rule `no-unnecessary-condition` sees `arr[i]` as never
+    undefined here (no `noUncheckedIndexedAccess`), so use `.at(i)` when a missing element is a real possibility, and a throwing helper
+    instead of `!` (#52). (7) jsdom cannot show the replaced-item case by typing: the page keeps its Inventory Check draft in
+    `localStorage` (`fnc_inv_check_draft_<id>`), so a test seeds the draft.
+    Not done, on purpose or not asked: the older whole-flow PO path (`confirmPOInventoryCheck` auto-fills a store price the same way and its
+    page shows no flag; no live PO uses it); a second warning when a draft Store Out is confirmed (offered, not chosen); the 30 days as a
+    company setting; the line's own copy of the price (`po_lines.store_price`) is not refreshed when the product's Cost is corrected later
+    (#56): the notice sends the keeper to the item to correct its Cost, which restarts the clock but does not rewrite lines already priced.
+    Not verified in a browser (the tint, the notice, the Arabic text, the phone layout).
+    Tests: `services/gateway/tests/stale-stock-cost.test.ts` (20, real Postgres through the real ApolloServer: the age from creation, change and
+    confirmation, the limit's edges, a custom line, the watched stages and the CHECK pin, the notice's recipients, text and exclusions, Price
+    confirmed's gates and effects; 17 mutations killed), web `lib/__tests__/staleStockCost.test.ts` (the rule, the pin to the server's limit,
+    the translations), `components/procurement/__tests__/StaleCostNotice.test.tsx` (6) and `RequisitionDetailStaleCost.test.tsx` (17: the
+    tag, the tint, the notice, who gets the button, the Inventory Check as the quantity is typed, a replaced item, the refetch, Arabic; 17
+    mutations killed). Related to #33, #38, #43, #56, #58 and #60.

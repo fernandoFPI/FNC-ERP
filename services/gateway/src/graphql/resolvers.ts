@@ -103,6 +103,12 @@ import { bookStockIssueCost, stockCostCurrencySql } from '../lib/stockIssueCost.
 import { assertLineAccountingChoice } from '../lib/poLineAccounting.js'
 import { assertReceivableLocation } from '../lib/receivingLocation.js'
 import {
+  costAgeDaysSql,
+  costStaleSql,
+  staleStockCostLines,
+  staleStockCostNotice,
+} from '../lib/staleStockCost.js'
+import {
   STORE_DOCUMENTS_LIMIT,
   STORE_DOCUMENTS_SQL,
   isStoreDocumentType,
@@ -4832,6 +4838,8 @@ async function notifyPositionHoldersForRequisitionGW(
   requisitionId: string,
   position: string,
   notification: POAuthGWNotification,
+  // the person whose own action raised the notice already saw it on screen, so they are left out
+  exceptUserId?: string,
 ): Promise<void> {
   const reqResult = await query(
     `SELECT req.project_id, req.branch_id, ou.id AS organizer_user_id
@@ -4864,6 +4872,7 @@ async function notifyPositionHoldersForRequisitionGW(
     [position, req.project_id ?? null, departmentId, req.branch_id ?? null],
   )
   for (const holder of holders.rows) {
+    if (exceptUserId && holder.user_id === exceptUserId) continue
     await query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
       [
@@ -11969,6 +11978,9 @@ export const resolvers = {
                   pol.store_price, pol.store_price_currency,
                   -- see the PO lines query: the item's Cost in inventory, NULL when none is recorded
                   NULLIF(p.standard_cost, 0) AS inventory_cost, p.cost_currency AS inventory_cost_currency,
+                  -- stale stock cost (lib/staleStockCost.ts): how old the item's Cost is, and whether that is over the limit in a stage where it matters
+                  ${costAgeDaysSql('p')} AS cost_age_days,
+                  ${costStaleSql('p', '(SELECT rq0.status FROM requisitions rq0 WHERE rq0.id = pol.requisition_id)')} AS cost_stale,
                   pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
                   pol.in_stock, pol.qty_from_stock,
                   pol.source_location_id, sl.name AS source_location_name,
@@ -35971,8 +35983,76 @@ const phase5MutationResolvers = {
         body: 'A requisition is awaiting your approval',
       })
     }
+    // Stale stock cost (playbook #111): the store prices were just copied from each product's Cost. When the Cost behind a line drawn from
+    // stock has not changed or been confirmed for over a month, the store keepers are asked to double-check it. Best effort: the check is
+    // already committed and must not fail because a notice could not be written.
+    void (async () => {
+      try {
+        const stale = await staleStockCostLines(args.id, auth.companyId)
+        if (stale.length === 0) return
+        const reqNo = (
+          await query<{ requisition_number: string }>(
+            `SELECT requisition_number FROM requisitions WHERE id=$1`,
+            [args.id],
+          )
+        ).rows[0]?.requisition_number
+        await notifyPositionHoldersForRequisitionGW(
+          args.id,
+          'store_keeper',
+          { type: 'REQ_STALE_STOCK_COST', ...staleStockCostNotice(stale, reqNo) },
+          auth.userId,
+        )
+      } catch (err) {
+        console.error('[stale-stock-cost] could not notify store keepers', args.id, err)
+      }
+    })()
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
+  },
+
+  // Stale stock cost (playbook #111): the store keeper double-checked this item's Cost for this requisition, so its 30-day clock restarts.
+  // Same gate as the inventory check itself (a Store Keeper of THIS requisition, or an admin), the requisition must be this company's, and
+  // the product must be on one of its lines, so the call can never touch an arbitrary product. The product may belong to the central
+  // warehouse's catalogue (a Yakam requisition drawing on the group's one inventory), which is why the product is not filtered by company.
+  confirmRequisitionStockCost: async (
+    _: unknown,
+    args: { requisitionId: string; productId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const req = await query(`SELECT 1 FROM requisitions WHERE id=$1 AND company_id=$2`, [
+      args.requisitionId,
+      auth.companyId,
+    ])
+    if (!req.rows[0]) throw new Error('Requisition not found')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const isStoreKeeper = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.requisitionId,
+      'store_keeper',
+    )
+    if (!isAdmin && !isStoreKeeper) throw new Error('Only a Store Keeper can confirm a store price')
+    const onLine = await query(
+      `SELECT 1 FROM po_lines WHERE requisition_id=$1 AND product_id=$2 LIMIT 1`,
+      [args.requisitionId, args.productId],
+    )
+    if (!onLine.rows[0]) throw new Error('That item is not on this requisition')
+    await query(`UPDATE products SET cost_confirmed_at = NOW(), cost_confirmed_by = $1 WHERE id = $2`, [
+      auth.userId,
+      args.productId,
+    ])
+    await logAudit({
+      userId: auth.userId,
+      companyId: auth.companyId,
+      action: 'CONFIRM_STOCK_COST',
+      tableName: 'products',
+      recordId: args.productId,
+      newValues: { requisitionId: args.requisitionId },
+    })
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    return true
   },
 
   // ── G1 requisition lifecycle mutations (PR 1b: store/market pricing +
