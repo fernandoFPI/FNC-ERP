@@ -811,6 +811,7 @@
     "breadcrumb": "Breadcrumb",
     "switchCompany": "Switch company",
     "selectCompany": "Select company",
+    "companyChangedNotice": "Your session is now in {{company}} (the company was switched in another tab or device). This page was refreshed with {{company}}'s data. Check anything you were filling in.",
     "userMenu": "User menu",
     "notificationsUnread": "Notifications, {{count}} unread",
     "notifications": "Notifications",

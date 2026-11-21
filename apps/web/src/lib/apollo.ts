@@ -14,10 +14,9 @@ import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 import { createClient } from 'graphql-ws'
 import { useAuthStore } from '../store/authStore'
-import { useCompanyStore } from '../store/companyStore'
 import { useToastStore } from '../store/toastStore'
 import { useTourStore } from '../store/tourStore'
-import { decodeJWT } from './jwt'
+import { applyRefreshedToken, setCompanyChangeHandler } from './refreshedSession'
 
 const httpLink = createHttpLink({
   uri: `${import.meta.env.VITE_API_URL}/api/v1/graphql`,
@@ -80,19 +79,9 @@ async function refreshAccessToken(): Promise<string | null> {
     const data = (await response.json()) as { data?: { accessToken?: string } }
     const newToken = data.data?.accessToken
     if (newToken) {
-      useAuthStore.getState().setAccessToken(newToken)
-      // The refreshed token's companyId is authoritative — keep the UI's
-      // company switcher and permissions in sync with it, in case the
-      // server resolved a different company than what's locally cached.
-      const decoded = decodeJWT(newToken)
-      if (decoded) {
-        useAuthStore.getState().setUser({ companyId: decoded.companyId, role: decoded.role })
-        const { activeCompany, companies } = useCompanyStore.getState()
-        if (decoded.companyId !== activeCompany?.id) {
-          const matched = companies.find((c) => c.id === decoded.companyId)
-          if (matched) useCompanyStore.setState({ activeCompany: matched })
-        }
-      }
+      // The refreshed token's companyId is authoritative: keeps the company switcher and permissions in step with it
+      // and resets cached company data when it differs (lib/refreshedSession.ts, shared with the REST client).
+      applyRefreshedToken(newToken)
       return newToken
     }
     return null
@@ -182,4 +171,11 @@ export const apolloClient = new ApolloClient({
     watchQuery: { errorPolicy: 'all' },
     query: { errorPolicy: 'all' },
   },
+})
+
+// A token refresh that lands in another company empties the cache so no screen keeps the old company's data. It is
+// cache.reset(), not clearStore(): clearStore also cancels the queries in flight, including the one this very refresh is
+// retrying. Screens that are open refetch what they show (an incomplete cache entry triggers a network fetch).
+setCompanyChangeHandler(() => {
+  void apolloClient.cache.reset()
 })

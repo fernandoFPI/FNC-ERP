@@ -3833,3 +3833,52 @@ Don't re-derive, check these first.
     every render and hides a stale one; same family as #60.3 from the other side) and the test delivered the advance rows after
     everything else. Remembered filters for this page are #70. Tests: 13 mutations on the Finance part killed (after the two fixes
     above). Not verified in a browser. Related to #24, #85, #70.
+
+114. **A document filed in one company on another company's project: the guard existed on one purpose only, and a token refresh
+    changed the company underneath a form that was already filled in.** NY-REQ-2026-0074 (Nishtimani Yakam, 44 electrical lines
+    for NF-PRJ-2026-0006 "SEC Office Caravan", a Nishtimani Factory project) was created on 21 Nov 2026, 11:13 UTC, by a user with
+    active roles in all three companies, and sat at inventory check. The requisition's company comes from the session
+    (`ctx.auth.companyId`), its project from the form, and nothing compared them: `createRequisition` looked the project up scoped by
+    company only to read its cost center, and refused a foreign one (`Project not found`) for direct supply alone; Project Supply and
+    every other purpose stored whatever id arrived (playbook #87e had already noted this and left it). Its branch was a Yakam branch,
+    so the row was half Factory (project, all 44 products) and half Yakam (company, branch), which is what points at the cause.
+    How the form got a Factory project under a Yakam session (probable, not reproduced; the audit log has no session id): a refresh
+    answers with the company the SESSION was last active in (`auth.ts`, `/refresh`), and every tab of one login shares that session. If
+    another tab switches company, this tab's next refresh (every 15 minutes) silently becomes that company while its screens keep the
+    old data. The two refresh handlers (`axios.ts` for REST, `apollo.ts` for GraphQL) stored the new token and company but, unlike the
+    manual switch (`EntitySwitcher`), never cleared the Apollo cache, so the `projects` list (cached with variables that carry no
+    company) stayed Factory's while the branch list (variables carry `companyId`) reloaded as Yakam's. The REST handler did not even
+    move the company badge, and neither loaded the new company's permissions. That user made 33 company switches that day across three
+    concurrent sessions. Scale on production: this was the only requisition with a project or branch of another company and there was no
+    such purchase order.
+    Fix. (1) Server: `createRequisition` refuses any `project_id` and any `branch_id` that is not the caller's company's, for every
+    purpose (`Project not found` / `Branch not found`, before a number is taken); the project's cost center still applies to Project
+    Supply and direct supply only, the branch's to the rest, exactly as before. `createPurchaseOrder` had the same hole for
+    `linkedProjectId` (the lookup was scoped, a miss was ignored) and now refuses too. (2) Web: both refresh paths call one function,
+    `applyRefreshedToken` (`lib/refreshedSession.ts`): store the token, put user and company badge in step with it, load that company's
+    permissions, and when the company differs from the one the tab was using reset the Apollo cache and show a warning toast
+    (`shell.companyChangedNotice`, en and ar). It resets with `cache.reset()`, not `clearStore()`: `clearStore` also cancels the queries in
+    flight, including the one the refresh is retrying, while open screens do refetch after `cache.reset()` (a test proves it with a real
+    client). The form's own React state (the project already chosen) is NOT cleared and the page is NOT reloaded (a reload would lose a
+    44-line form); with the server guard the stale project is now refused at Create instead of being filed. Still open, by design: the
+    session itself holds one company for all tabs, so a switch in tab B still changes tab A's next refresh (the real fix is to carry the
+    company in the refresh token or refuse a refresh that would change it); the stale cache is dealt with, the surprise is only announced.
+    Data: moved to Nishtimani Factory as NF-REQ-2026-0186 (Factory's own counter, locked and advanced, nothing already in use), branch
+    cleared (the user's choice), after a `pg_dump`, a rehearsal that rolled back, one transaction from a file whose guards abort unless the
+    record is exactly as read (Yakam, inventory check, Factory project, 44 lines of Factory products with no account, cost center, stock or
+    location, no PO, purchase, Store Out, return or approved total, an active system_admin actor), one `audit_log` row
+    (`move_requisition_company`, old and new company, number and branch), and a re-read on a fresh connection. The lines needed no cost center
+    or account: the project has none and Factory has no default purchase account. No notification pointed at it (checked), so nothing stale
+    is left for Yakam's store keepers, and Factory's store keepers were not told it arrived: it is in their inventory-check list.
+    How to spot the class: a row whose parent references (project, branch, vendor, employee) belong to different companies; for each
+    reference a create or edit takes from the client, grep whether a company-scoped lookup's MISS is turned into an error (a lookup that is
+    scoped but whose empty result is ignored guards nothing); `SELECT ... FROM <doc> d JOIN <ref> x ON x.id = d.<ref>_id WHERE x.company_id <>
+    d.company_id` for every document table. A form that mixes two companies' data is a sign the client's company changed after the form loaded.
+    Tests: `services/gateway/tests/requisition-project-company-guard.test.ts` (real Postgres, 17: every purpose refuses a foreign or unknown
+    project, a foreign branch, nothing written, own project / branch accepted, the cost-center rules unchanged, the purchase order path; 8
+    mutations killed), `apps/web/src/lib/__tests__/refreshedSession.test.ts` (14: the helper, the real REST path through axios, the real
+    GraphQL path through Apollo's error link with a stubbed `fetch`, the registered handler wiping a real cache, a watching query refetching
+    after `cache.reset()`, source pins; 13 mutations killed). Traps met: `vi.resetModules()` plus dynamic imports gives the real module's
+    registered handler, where a test that re-registers one proves nothing about the app's; `@typescript-eslint` flags `!` and a void arrow
+    in a test, so use a throwing helper and braces. Not verified in a browser (the toast, a two-tab switch). Related to #85b (a reference
+    the request names was never checked against the company), #87e, #60.1 (a screen that shows one company and writes to another) and #9.

@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useCompanyStore } from '../store/companyStore'
-import { decodeJWT } from './jwt'
+import { applyRefreshedToken } from './refreshedSession'
 
 export const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
@@ -72,13 +72,9 @@ api.interceptors.response.use(
           const payload = (res.data.data ?? res.data) as { accessToken: string }
           const { accessToken } = payload
 
-          store.setAccessToken(accessToken)
-
-          // Sync role from new token (company switch may have changed it)
-          const decoded = decodeJWT(accessToken)
-          if (decoded) {
-            store.setUser({ role: decoded.role, companyId: decoded.companyId })
-          }
+          // Sync role AND company from the new token (a switch in another tab changes the session's company),
+          // resetting cached company data when it differs (lib/refreshedSession.ts, shared with Apollo's refresh).
+          applyRefreshedToken(accessToken)
           refreshCompanyList()
 
           if (config) {

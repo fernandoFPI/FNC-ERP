@@ -223,7 +223,7 @@ describe('createRequisition — account/cost-center defaulting', () => {
   // an id simply guessed) would silently leak that other company's cost
   // center onto this line. ctx here is still TEST_COMPANY_ID's session —
   // the caller never actually belongs to the foreign company.
-  it("does not leak another company's project/branch cost center into a requisition line", async () => {
+  it("refuses another company's project/branch, so its cost center can never reach a requisition line", async () => {
     const FOREIGN_COMPANY_ID = 'f9999999-0000-0000-0000-000000000001'
     // Defensive pre-cleanup — if a previous run of this test was
     // interrupted mid-way (e.g. the process killed between creating these
@@ -263,27 +263,36 @@ describe('createRequisition — account/cost-center defaulting', () => {
     let reqId: string | undefined
     try {
       const productId = await makeProduct('crosstenant')
-      const created = await resolvers.Mutation.createRequisition(
-        null,
-        {
-          input: {
-            purpose: 'project',
-            project_id: foreignProject.rows[0]!.id,
-            delivery_destination: 'inventory',
-            branch_id: foreignBranch.rows[0]!.id,
-            lines: [{ product_id: productId, description: 'x', qty: 1, unit_price: 1 }],
-          },
-        },
-        ctx as never,
-      )
-      reqId = (created as { id: string }).id
-      const line = await pool.query<{ cost_center_id: string | null }>(
-        `SELECT cost_center_id FROM po_lines WHERE requisition_id=$1`,
-        [reqId],
-      )
-      // Must come back null, exactly as if project_id/branch_id were never
-      // set — not the foreign company's cost center.
-      expect(line.rows[0]!.cost_center_id).toBeNull()
+      const input = {
+        purpose: 'project',
+        project_id: foreignProject.rows[0]!.id,
+        delivery_destination: 'inventory',
+        branch_id: foreignBranch.rows[0]!.id,
+        lines: [{ product_id: productId, description: 'x', qty: 1, unit_price: 1 }],
+      }
+      const countFor = async () =>
+        Number(
+          (
+            await pool.query<{ n: string }>(
+              `SELECT count(*) AS n FROM requisitions WHERE project_id=$1 OR branch_id=$2`,
+              [foreignProject.rows[0]!.id, foreignBranch.rows[0]!.id],
+            )
+          ).rows[0]!.n,
+        )
+      // Since playbook #114 a project or branch of another company is REFUSED outright (before, it was stored and only
+      // its cost center was left out). Either way no foreign cost center can reach a line, and now no row is written
+      // that points at another company's project or branch at all.
+      await expect(
+        resolvers.Mutation.createRequisition(null, { input }, ctx as never),
+      ).rejects.toThrow('Project not found')
+      await expect(
+        resolvers.Mutation.createRequisition(
+          null,
+          { input: { ...input, project_id: undefined, purpose: 'stock' } },
+          ctx as never,
+        ),
+      ).rejects.toThrow('Branch not found')
+      expect(await countFor()).toBe(0)
     } finally {
       // The requisition itself FK-references the foreign project — must
       // go before it, or the project delete below violates that FK. The
