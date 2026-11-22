@@ -308,7 +308,8 @@ export default function MyQueuePage() {
           r.status === 'items_bought'
             ? `/procurement/requisitions/${r.id}/items-bought`
             : `/procurement/requisitions/${r.id}`,
-        needsApproval: r.status === 'pending_approval',
+        // a PO Admin's approval of the organizer's changes is an approval too
+        needsApproval: r.status === 'pending_approval' || r.status === 'review_approval',
         priority: r.priority ?? null,
       })
     }

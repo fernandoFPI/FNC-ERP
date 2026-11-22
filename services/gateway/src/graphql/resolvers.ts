@@ -57,6 +57,16 @@ import {
   isDirectSupply,
 } from '../lib/directSupply.js'
 import {
+  canActOnReview,
+  canApproveReview,
+  describeReviewEdit,
+  isReviewStatus,
+  nextReviewOriginals,
+  reviewApprovalReason,
+  reviewNeedsApproval,
+  type ReviewCounts,
+} from '../lib/requisitionReview.js'
+import {
   INVOICE_LINES_SQL,
   invoiceHeaderFlagFields,
   invoiceRejectionFields,
@@ -2299,13 +2309,11 @@ async function getPOLinePurchaseForReturn(id: string): Promise<Record<string, un
     `SELECT plp.*, v.name AS vendor_name,
             COALESCE(bu.first_name || ' ' || bu.last_name, bu.email) AS bought_by_name,
             COALESCE(tu.first_name || ' ' || tu.last_name, tu.email) AS tolerance_approved_by_name,
-            COALESCE(oau.first_name || ' ' || oau.last_name, oau.email) AS organizer_approved_by_name,
             f.id AS receipt_file_id, f.original_filename AS receipt_filename
      FROM po_line_purchases plp
      LEFT JOIN vendors v ON v.id=plp.vendor_id
      LEFT JOIN users bu ON bu.id=plp.bought_by
      LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
-     LEFT JOIN users oau ON oau.id=plp.organizer_approved_by
      LEFT JOIN document_attachments da ON da.id=plp.receipt_attachment_id
      LEFT JOIN files f ON f.id=da.file_id
      WHERE plp.id=$1`,
@@ -2662,26 +2670,6 @@ async function callerMayBuyRequisitionLineGW(
   return userHasPositionForRequisitionGW(auth.userId, auth.companyId, requisitionId, 'buyer')
 }
 
-// The extra layer of approval on Items Bought (migration 316). An admin marks users whose purchases the requisition's
-// organizer must approve before the requisition continues. Whether a purchase needs the approval is read from the mark
-// when the purchase is recorded and stored on the purchase, so un-marking someone later does not free what they already
-// bought, and marking someone does not trap what is already in progress.
-const ORGANIZER_APPROVAL_PENDING_REASON =
-  "Purchases recorded by a marked buyer must be approved by the requisition's organizer before finishing buying"
-
-// Who may approve, or send back, a purchase that needs the organizer's approval: the requisition's organizer, or an admin
-// acting for him, and never the person who bought it. When the buyer IS the organizer (a normal user buying his own lines)
-// that leaves admins only.
-function canApproveMarkedPurchaseGW(opts: {
-  callerId: string
-  callerIsAdmin: boolean
-  organizerId: string | null
-  boughtBy: string | null
-}): boolean {
-  if (opts.boughtBy !== null && opts.boughtBy === opts.callerId) return false
-  return opts.callerIsAdmin || (opts.organizerId !== null && opts.organizerId === opts.callerId)
-}
-
 // A short notice to one user about a requisition. The payload carries `requisitionId`, the key the worker reads for every
 // REQ_* event (notifyUserGW carries `poId`, which the worker's REQ_* cases cannot use).
 async function notifyUserForRequisitionGW(
@@ -2695,54 +2683,185 @@ async function notifyUserForRequisitionGW(
   )
 }
 
-// Everything else Items Bought needed is in and the requisition is waiting only for the organizer: tell him. Not again
-// within half an hour (a later receipt photo triggers the same check), and not when the only purchases waiting are his
-// own, because nothing there is his to approve.
-async function notifyOrganizerOfPendingPurchases(reqId: string): Promise<void> {
-  const r = await query<{
-    organizer_id: string | null
-    requisition_number: string
-    waiting: string
-  }>(
-    `SELECT req.organizer_id, req.requisition_number,
-            (SELECT COUNT(*) FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-              WHERE pl.requisition_id=req.id AND plp.needs_organizer_approval AND plp.organizer_approved_by IS NULL
-                AND plp.bought_by IS DISTINCT FROM req.organizer_id) AS waiting
-       FROM requisitions req WHERE req.id=$1`,
-    [reqId],
-  )
-  const row = r.rows[0]
-  if (!row.organizer_id || parseInt(row.waiting, 10) === 0) return
-  const recent = await query(
-    `SELECT 1 FROM service_outbox
-      WHERE event_type='REQ_PURCHASES_APPROVAL_REQUIRED' AND payload->>'requisitionId'=$1
-        AND payload->>'userId'=$2 AND created_at > NOW() - INTERVAL '30 minutes' LIMIT 1`,
-    [reqId, row.organizer_id],
-  )
-  if (recent.rows[0]) return
-  await notifyUserForRequisitionGW(row.organizer_id, reqId, {
-    type: 'REQ_PURCHASES_APPROVAL_REQUIRED',
-    title: 'Items bought need your approval',
-    body: `${row.requisition_number}: review what was bought and approve it so the requisition can continue`,
-  })
+// ── Organizer review notices (migration 329, playbook #115) ─────────────────────────────────────────────────────────
+// The worker reads `requisitionId` for every REQ_* event, so these go through notifyUserForRequisitionGW. All best effort:
+// the action that triggered them has already committed and must not fail because of a notice.
+
+// Buying is finished: the organizer has to review what was bought before any purchase order exists.
+async function notifyOrganizerReviewRequired(reqId: string): Promise<void> {
+  try {
+    const r = await query<{ organizer_id: string | null; requisition_number: string }>(
+      `SELECT organizer_id, requisition_number FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    const row = r.rows[0]
+    if (!row.organizer_id) return
+    await notifyUserForRequisitionGW(row.organizer_id, reqId, {
+      type: 'REQ_REVIEW_REQUIRED',
+      title: 'Review what was bought',
+      body: `${row.requisition_number}: buying is finished. Check the purchases and receipts, then confirm so the purchase orders can be created`,
+    })
+  } catch (err) {
+    console.error('[review] could not notify the organizer', reqId, err)
+  }
 }
 
-// Whether a requisition in Items Bought is ready to Finish Buying, as the message of what is still missing, or
-// null when it is: every purchased line fully bought or marked short, every purchase has a receipt, every
-// over-tolerance purchase signed off. The manual button and the automatic path (tryAutoFinishBuying) share it.
-async function finishBuyingNotReadyReason(
-  reqId: string,
-  companyId: string,
-): Promise<string | null> {
-  const statusRow = await query<{ status: string; company_id: string }>(
-    `SELECT status, company_id FROM requisitions WHERE id=$1`,
-    [reqId],
-  )
-  const row = statusRow.rows[0]
-  if (!row || row.company_id !== companyId) return 'Requisition not found'
-  if (row.status !== 'items_bought')
-    return 'Requisition must be in items_bought status to finish buying'
+// The organizer submitted changes: the PO Admins of this company (and the procurement admins who have not opted out of
+// requisition approval notices) are asked to approve. Never the organizer himself.
+async function notifyReviewApprovers(reqId: string, why: string): Promise<void> {
+  try {
+    const r = await query<{
+      company_id: string
+      organizer_id: string | null
+      requisition_number: string
+    }>(`SELECT company_id, organizer_id, requisition_number FROM requisitions WHERE id=$1`, [reqId])
+    const req = r.rows.at(0)
+    if (!req) return
+    const recipients = await query<{ user_id: string }>(
+      `SELECT DISTINCT u.id AS user_id
+         FROM users u
+        WHERE u.is_active = true
+          AND u.id IS DISTINCT FROM $2::uuid
+          AND (
+            EXISTS (
+              SELECT 1 FROM employees e
+                JOIN po_position_assignments ppa ON ppa.employee_id = e.id
+               WHERE e.user_id = u.id AND ppa.company_id = $1 AND ppa.position = 'po_admin' AND ppa.is_active = true)
+            OR (
+              EXISTS (
+                SELECT 1 FROM user_company_roles ucr
+                 WHERE ucr.user_id = u.id AND ucr.company_id = $1 AND ucr.is_active = true
+                   AND ucr.role IN ('system_admin','company_admin'))
+              AND COALESCE((u.notification_preferences->>'admin_requisition_approval')::boolean, true) = true
+            )
+          )`,
+      [req.company_id, req.organizer_id],
+    )
+    for (const rec of recipients.rows) {
+      await notifyUserForRequisitionGW(rec.user_id, reqId, {
+        type: 'REQ_REVIEW_APPROVAL_REQUIRED',
+        title: 'Purchase changes need your approval',
+        body: `${req.requisition_number}: ${why}. Approve so the purchase orders can be created`,
+      })
+    }
+  } catch (err) {
+    console.error('[review] could not notify the approvers', reqId, err)
+  }
+}
 
+// A PO Admin decided: tell the organizer.
+async function notifyOrganizerReviewDecided(
+  reqId: string,
+  approved: boolean,
+  reason?: string,
+): Promise<void> {
+  try {
+    const r = await query<{ organizer_id: string | null; requisition_number: string }>(
+      `SELECT organizer_id, requisition_number FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    const row = r.rows[0]
+    if (!row.organizer_id) return
+    await notifyUserForRequisitionGW(row.organizer_id, reqId, {
+      type: 'REQ_REVIEW_DECIDED',
+      title: approved ? 'Your review was approved' : 'Your review was sent back',
+      body: approved
+        ? `${row.requisition_number}: approved, the purchase orders were created`
+        : `${row.requisition_number}: ${reason ?? 'sent back to you for changes'}`,
+    })
+  } catch (err) {
+    console.error('[review] could not notify the organizer of the decision', reqId, err)
+  }
+}
+
+// The organizer sent the requisition back to the buyers.
+async function notifyBuyersSentBack(
+  reqId: string,
+  userIds: string[],
+  reason: string,
+): Promise<void> {
+  try {
+    const r = await query<{ requisition_number: string }>(
+      `SELECT requisition_number FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    const number = r.rows[0]?.requisition_number ?? ''
+    for (const id of new Set(userIds)) {
+      await notifyUserForRequisitionGW(id, reqId, {
+        type: 'REQ_SENT_BACK_TO_BUYING',
+        title: 'Sent back to Items Bought',
+        body: `${number}: ${reason}`,
+      })
+    }
+  } catch (err) {
+    console.error('[review] could not notify the buyers', reqId, err)
+  }
+}
+
+// Reads a requisition for one of the review mutations: it must be this company's and in the expected review status. The
+// answers say which of the two steps the requisition is in, so a click on a screen that has not caught up is explained.
+async function loadRequisitionInReviewGW(
+  reqId: string,
+  auth: GWAuth,
+  expected: 'organizer_review' | 'review_approval',
+): Promise<{ status: string; organizer_id: string | null; requisition_number: string }> {
+  const r = await query<{
+    status: string
+    company_id: string
+    organizer_id: string | null
+    requisition_number: string
+  }>(`SELECT status, company_id, organizer_id, requisition_number FROM requisitions WHERE id=$1`, [
+    reqId,
+  ])
+  const row = r.rows.at(0)
+  if (!row || row.company_id !== auth.companyId) throw new Error('Requisition not found')
+  if (row.status !== expected)
+    throw new Error(
+      expected === 'organizer_review'
+        ? `The requisition is in '${row.status}', not in Organizer Review`
+        : `The requisition is in '${row.status}', not waiting for a PO Admin's approval`,
+    )
+  return row
+}
+
+// What the review has to account for (lib/requisitionReview.ts decides what it means). Passing the transaction's own client
+// reads inside that transaction.
+async function reviewCountsGW(
+  reqId: string,
+  organizerId: string | null,
+  client?: PoolClient,
+): Promise<ReviewCounts> {
+  const sql = `SELECT COUNT(*) FILTER (WHERE plp.review_original_qty IS NOT NULL OR plp.review_original_price IS NOT NULL) AS edited,
+                      COUNT(*) FILTER (WHERE $2::uuid IS NOT NULL AND plp.bought_by = $2::uuid) AS organizer_bought,
+                      COUNT(*) FILTER (WHERE plp.over_tolerance AND plp.tolerance_approved_by IS NULL) AS unsigned_tolerance
+                 FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
+                WHERE pl.requisition_id = $1`
+  const params = [reqId, organizerId]
+  const res = client
+    ? await client.query<{ edited: string; organizer_bought: string; unsigned_tolerance: string }>(
+        sql,
+        params,
+      )
+    : await query<{ edited: string; organizer_bought: string; unsigned_tolerance: string }>(
+        sql,
+        params,
+      )
+  const row = res.rows.at(0)
+  return {
+    edited: parseInt(row?.edited ?? '0', 10),
+    organizerBought: parseInt(row?.organizer_bought ?? '0', 10),
+    unsignedTolerance: parseInt(row?.unsigned_tolerance ?? '0', 10),
+  }
+}
+
+// The three checks on what was bought, shared by Finish Buying (items_bought) and the organizer review (the lines must
+// still be fully covered when he confirms or submits): every purchased line fully bought or marked short, every purchase has a
+// receipt, every over-tolerance purchase signed off. `skipTolerance` leaves out the last one: during the review an edited
+// over-tolerance purchase is signed off by the PO Admin's approval, so it must not block the organizer from submitting.
+async function buyingGatesReason(
+  reqId: string,
+  opts: { skipTolerance?: boolean } = {},
+): Promise<string | null> {
   // Gate 1: every line is either fully accounted for (stock + bought
   // covers qty_ordered) or explicitly marked short.
   const unresolved = await query<{ c: string }>(
@@ -2768,33 +2887,54 @@ async function finishBuyingNotReadyReason(
     return 'Attach a receipt photo to every recorded purchase before finishing buying'
 
   // Gate 3: every over-tolerance purchase has been signed off.
-  const unapprovedTolerance = await query<{ c: string }>(
-    `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-       WHERE pl.requisition_id=$1 AND plp.over_tolerance=true AND plp.tolerance_approved_by IS NULL`,
-    [reqId],
-  )
-  if (parseInt(unapprovedTolerance.rows[0]?.c ?? '0', 10) > 0)
-    return 'Every over-tolerance purchase must be approved before finishing buying'
-
-  // Gate 4: every purchase recorded by a marked buyer has the organizer's approval (migration 316). Last on purpose:
-  // when this is the only thing missing, the organizer is the one being waited for (see tryAutoFinishBuying).
-  const awaitingOrganizer = await query<{ c: string }>(
-    `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-       WHERE pl.requisition_id=$1 AND plp.needs_organizer_approval AND plp.organizer_approved_by IS NULL`,
-    [reqId],
-  )
-  if (parseInt(awaitingOrganizer.rows[0]?.c ?? '0', 10) > 0)
-    return ORGANIZER_APPROVAL_PENDING_REASON
-
+  if (!opts.skipTolerance) {
+    const unapprovedTolerance = await query<{ c: string }>(
+      `SELECT COUNT(*) AS c FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+         WHERE pl.requisition_id=$1 AND plp.over_tolerance=true AND plp.tolerance_approved_by IS NULL`,
+      [reqId],
+    )
+    if (parseInt(unapprovedTolerance.rows[0]?.c ?? '0', 10) > 0)
+      return 'Every over-tolerance purchase must be approved before finishing buying'
+  }
   return null
 }
 
-// Forks one child purchase order per vendor and moves the requisition to Sourcing. Throws when the requisition is
-// not ready (finishBuyingNotReadyReason). Used by the Finish Buying button and, normally, by tryAutoFinishBuying.
-async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise<void> {
-  const notReady = await finishBuyingNotReadyReason(reqId, auth.companyId)
-  if (notReady) throw new Error(notReady)
+// Whether a requisition in Items Bought is ready to Finish Buying, as the message of what is still missing, or
+// null when it is: every purchased line fully bought or marked short, every purchase has a receipt, every
+// over-tolerance purchase signed off. The manual button and the automatic path (tryAutoFinishBuying) share it.
+async function finishBuyingNotReadyReason(
+  reqId: string,
+  companyId: string,
+): Promise<string | null> {
+  const statusRow = await query<{ status: string; company_id: string }>(
+    `SELECT status, company_id FROM requisitions WHERE id=$1`,
+    [reqId],
+  )
+  const row = statusRow.rows.at(0)
+  if (!row || row.company_id !== companyId) return 'Requisition not found'
+  if (row.status !== 'items_bought')
+    return 'Requisition must be in items_bought status to finish buying'
 
+  return buyingGatesReason(reqId)
+}
+
+// Forks one child purchase order per vendor and moves the requisition to Sourcing. This is "the requisition becomes
+// purchase orders", and since migration 329 it happens only after the organizer's review: confirmReview (nothing changed,
+// nothing bought by the organizer himself) or approveReview (a PO Admin approved the changes). The caller has already
+// decided the review is allowed and has checked the lines are still fully covered. `beforeFork` runs inside the same
+// transaction, after the status lock, so what approving the review also writes (the tolerance sign-offs) commits or
+// rolls back together with the purchase orders.
+async function forkChildPurchaseOrders(
+  reqId: string,
+  auth: GWAuth,
+  fromStatus: 'organizer_review' | 'review_approval',
+  action: 'confirm_review' | 'approve_review',
+  opts: {
+    notes?: string
+    actorPosition?: string
+    beforeFork?: (client: PoolClient) => Promise<void>
+  } = {},
+): Promise<void> {
   const reqRow = await query<{
     status: string
     company_id: string
@@ -2823,8 +2963,9 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
       `SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`,
       [reqId],
     )
-    if (locked.rows[0]?.status !== 'items_bought')
-      throw new Error('Requisition must be in items_bought status to finish buying')
+    if (locked.rows[0]?.status !== fromStatus)
+      throw new Error(`Requisition must be in ${fromStatus} status to create its purchase orders`)
+    if (opts.beforeFork) await opts.beforeFork(client)
 
     const linesRes = await client.query<{
       id: string
@@ -2994,7 +3135,16 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
     // fully covered by stock and/or marked short with nothing ever
     // bought — nothing to fork, just advance the requisition.
 
-    await reqTransition(client, reqId, 'items_bought', 'sourcing', 'finish_buying', auth)
+    await reqTransition(
+      client,
+      reqId,
+      fromStatus,
+      'sourcing',
+      action,
+      auth,
+      opts.notes,
+      opts.actorPosition,
+    )
     await client.query('COMMIT')
   } catch (e) {
     await client.query('ROLLBACK')
@@ -3005,6 +3155,37 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
   void publishEntityChanged(auth.companyId, 'requisition', reqId, 'updated')
 }
 
+// Buying is finished: the last purchase is in, every line bought or marked short, every receipt attached, every
+// over-tolerance purchase signed off. The requisition now goes to the organizer's review (no purchase order exists yet),
+// and the organizer is told. Throws when it is not ready (finishBuyingNotReadyReason). Used by the Finish Buying button
+// and, normally, by tryAutoFinishBuying.
+async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise<void> {
+  const notReady = await finishBuyingNotReadyReason(reqId, auth.companyId)
+  if (notReady) throw new Error(notReady)
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Two last actions landing together must not both move it: whoever gets the lock first does, the other sees
+    // the status has moved on (and says so in these words, which the race test pins).
+    const locked = await client.query<{ status: string }>(
+      `SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`,
+      [reqId],
+    )
+    if (locked.rows[0]?.status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to finish buying')
+    await reqTransition(client, reqId, 'items_bought', 'organizer_review', 'finish_buying', auth)
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+  void publishEntityChanged(auth.companyId, 'requisition', reqId, 'updated')
+  await notifyOrganizerReviewRequired(reqId)
+}
+
 // Finish Buying happens by itself: the moment the last line of a requisition in Items Bought is bought (or marked
 // short or covered from stock), its receipt attached and any over-tolerance purchase signed off, whoever did that
 // last thing, owner or buyer. Called after each action that can complete the set. Best effort on purpose: the
@@ -3013,11 +3194,6 @@ async function finishBuyingRequisitionCore(reqId: string, auth: GWAuth): Promise
 async function tryAutoFinishBuying(reqId: string, auth: GWAuth): Promise<void> {
   try {
     const notReady = await finishBuyingNotReadyReason(reqId, auth.companyId)
-    if (notReady === ORGANIZER_APPROVAL_PENDING_REASON) {
-      // Only the organizer's approval is missing: this is the moment to ask for it.
-      await notifyOrganizerOfPendingPurchases(reqId)
-      return
-    }
     if (notReady !== null) return
     await finishBuyingRequisitionCore(reqId, auth)
   } catch (err) {
@@ -12005,10 +12181,8 @@ export const resolvers = {
                      'bought_by_name', COALESCE(bu.first_name || ' ' || bu.last_name, bu.email),
                      'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by,
                      'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email),
-                     'needs_organizer_approval', plp.needs_organizer_approval,
-                     'organizer_approved_by', plp.organizer_approved_by,
-                     'organizer_approved_at', plp.organizer_approved_at,
-                     'organizer_approved_by_name', COALESCE(oau.first_name || ' ' || oau.last_name, oau.email)
+                     -- organizer review (migration 329): what the purchase held before the organizer changed it (null = not changed)
+                     'review_original_qty', plp.review_original_qty, 'review_original_price', plp.review_original_price
                    ) ORDER BY plp.bought_at), '[]')
                    FROM po_line_purchases plp
                    LEFT JOIN vendors v ON v.id=plp.vendor_id
@@ -12016,7 +12190,6 @@ export const resolvers = {
                    LEFT JOIN files rf ON rf.id=da.file_id
                    LEFT JOIN users bu ON bu.id=plp.bought_by
                    LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
-                   LEFT JOIN users oau ON oau.id=plp.organizer_approved_by
                    WHERE plp.po_line_id = pol.id) AS purchases
            FROM po_lines pol
            LEFT JOIN products p ON p.id=pol.product_id
@@ -12114,28 +12287,79 @@ export const resolvers = {
         userIsAssignedApproverForRequisitionGW(ctx.auth.userId, args.id),
         callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId),
       ])
-      // For each purchase waiting for the organizer's approval, whether THIS caller may act on it. Decided here by the
-      // same function the mutations use, so the page keeps no copy of the rule.
       const callerId = ctx.auth.userId
       const requisitionOrganizerId = (req.rows[0].organizer_id as string | null) ?? null
-      const linesWithApproval = lines.rows.map((l) => ({
-        ...l,
-        purchases: ((l.purchases as Record<string, unknown>[] | null) ?? []).map((p) => ({
-          ...p,
-          caller_can_approve:
-            !!p.needs_organizer_approval &&
-            !p.organizer_approved_by &&
-            canApproveMarkedPurchaseGW({
+      // The organizer review (migration 329): decided here, by the same functions the mutations use.
+      let review: Record<string, unknown> | null = null
+      const reqStatus = req.rows[0].status as string
+      if (isReviewStatus(reqStatus)) {
+        const counts = await reviewCountsGW(args.id, requisitionOrganizerId)
+        const [reviewTotals, lastDecision] = await Promise.all([
+          query<{ currency_code: string; was: string; now: string; purchases: string }>(
+            `-- currency-safe: grouped by the purchase's own currency, never added across currencies
+             SELECT plp.currency_code,
+                    COALESCE(SUM(COALESCE(plp.review_original_qty, plp.qty) * COALESCE(plp.review_original_price, plp.actual_unit_price)), 0) AS was,
+                    COALESCE(SUM(plp.qty * plp.actual_unit_price), 0) AS now,
+                    COUNT(*) AS purchases
+               FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
+              WHERE pl.requisition_id = $1
+              GROUP BY plp.currency_code ORDER BY plp.currency_code`,
+            [args.id],
+          ),
+          query<{
+            action: string
+            notes: string | null
+            created_at: string
+            by_name: string | null
+          }>(
+            `SELECT ral.action, ral.notes, ral.created_at,
+                    COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS by_name
+               FROM requisition_approval_log ral LEFT JOIN users u ON u.id = ral.actor_id
+              WHERE ral.requisition_id = $1
+                AND ral.action IN ('finish_buying','submit_review','reject_review','send_back_to_buying')
+              ORDER BY ral.created_at DESC LIMIT 1`,
+            [args.id],
+          ),
+        ])
+        // No log row is possible (a status set outside the workflow), so this may be undefined.
+        const last = lastDecision.rows.at(0)
+        review = {
+          needs_approval: reviewNeedsApproval(counts),
+          approval_reason: reviewApprovalReason(counts),
+          edited_count: counts.edited,
+          organizer_bought_count: counts.organizerBought,
+          unsigned_tolerance_count: counts.unsignedTolerance,
+          caller_can_edit:
+            reqStatus === 'organizer_review' &&
+            canActOnReview({
               callerId,
               callerIsAdmin: isAdmin,
               organizerId: requisitionOrganizerId,
-              boughtBy: (p.bought_by as string | null) ?? null,
             }),
-        })),
-      }))
+          caller_can_approve:
+            reqStatus === 'review_approval' &&
+            canApproveReview({
+              callerId,
+              callerIsAdmin: isAdmin,
+              callerIsPoAdmin: callerHasReqAdmin,
+              organizerId: requisitionOrganizerId,
+            }),
+          last_rejection:
+            last?.action === 'reject_review' && reqStatus === 'organizer_review'
+              ? { reason: last.notes, by_name: last.by_name, at: last.created_at }
+              : null,
+          totals: reviewTotals.rows.map((t) => ({
+            currency_code: t.currency_code,
+            was: t.was,
+            now: t.now,
+            purchases: parseInt(t.purchases, 10),
+          })),
+        }
+      }
       return {
         ...req.rows[0],
-        lines: linesWithApproval,
+        review,
+        lines: lines.rows,
         approval_log: approvals.rows,
         currencyTotals,
         edit_requests: editRequests.rows.map((r) => ({
@@ -12226,6 +12450,8 @@ export const resolvers = {
     //   pending_approval      dept head of the ORGANIZER's department, assigned approver,
     //                         or po_admin (approveRequisition)
     //   items_bought          buyer position (recordLinePurchase)
+    //   organizer_review      the organizer (confirmReview and the rest of the review)
+    //   review_approval       a po_admin or an admin, never the organizer (approveReview)
     //   admin                 hasProcurementAuthorityGW, same as every gate above
     // Position scope is userHasPositionForRequisitionGW's: the requisition's
     // project, the ORGANIZER's department (not the caller's), its branch, or a
@@ -12283,15 +12509,19 @@ export const resolvers = {
                        WHERE ppa.employee_id=$3 AND ppa.position='po_admin'
                          AND ppa.is_active=true AND ppa.company_id=$1)))
                OR (req.status='items_bought' AND ${positionScope('buyer')})
-               -- the organizer, when a marked buyer's purchases are waiting for him (mirrors approveItemsBought: never
-               -- counting purchases he recorded himself; admins already see every items_bought requisition below)
-               OR (req.status='items_bought' AND req.organizer_id=$2 AND EXISTS (
-                     SELECT 1 FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-                     WHERE pl.requisition_id=req.id AND plp.needs_organizer_approval
-                       AND plp.organizer_approved_by IS NULL AND plp.bought_by IS DISTINCT FROM $2))
+               -- organizer review (migration 329): the organizer reviews what was bought (confirmReview, editReviewPurchase,
+               -- submitReviewForApproval, sendBackToBuying). Admins act for him, so they see it below.
+               OR (req.status='organizer_review' AND req.organizer_id=$2)
+               -- ... and a PO Admin or an admin approves his changes (approveReview), never the organizer himself. Mirrors
+               -- canApproveReview; po_admin is unscoped, as in callerHasPOAdmin.
+               OR (req.status='review_approval' AND req.organizer_id IS DISTINCT FROM $2 AND (
+                     $4=true OR EXISTS (
+                       SELECT 1 FROM po_position_assignments ppa
+                       WHERE ppa.employee_id=$3 AND ppa.position='po_admin'
+                         AND ppa.is_active=true AND ppa.company_id=$1)))
                OR ($4=true AND req.status IN (
                      'inventory_check','store_pricing','market_pricing',
-                     'price_verification','pending_approval','items_bought'))
+                     'price_verification','pending_approval','items_bought','organizer_review'))
              )
            ORDER BY req.created_at DESC`,
           [auth.companyId, auth.userId, employeeId, isAdmin],
@@ -12906,31 +13136,6 @@ export const resolvers = {
         [args.userId, companyId],
       )
       return res.rows
-    },
-
-    // Whether this user's purchases need the organizer's approval (migration 316), for the Settings user screen. Same
-    // admins as the PO positions next to it.
-    userPurchaseReview: async (
-      _: unknown,
-      args: { userId: string; companyId?: string | null },
-      ctx: GQLContext,
-    ) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      if (
-        ctx.auth.role !== 'system_admin' &&
-        !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
-      )
-        throw new Error('system_admin role or PO Admin position required')
-      // The Settings screen can be looking at another company than the admin's session. Only a system_admin reaches
-      // across companies, so the mark shown is the mark of the company being shown.
-      const companyId = args.companyId ?? ctx.auth.companyId
-      if (companyId !== ctx.auth.companyId && ctx.auth.role !== 'system_admin')
-        throw new Error('system_admin role required to manage another company')
-      const r = await query(
-        `SELECT 1 FROM user_purchase_review_marks WHERE company_id=$1 AND user_id=$2`,
-        [companyId, args.userId],
-      )
-      return r.rows.length > 0
     },
 
     bankDetailsSummary: async (_: unknown, args: { employee_id: string }, ctx: GQLContext) => {
@@ -37162,29 +37367,11 @@ const phase5MutationResolvers = {
       // approveTolerancePurchase itself refuses an approver who matches
       // bought_by, so there is no path (inline or otherwise) for the same
       // person to both record and clear their own over-tolerance purchase.
-      // An admin can mark users whose purchases the requisition's organizer must approve (migration 316). The mark is
-      // read now and kept on the purchase, so changing it later neither frees nor traps what already exists.
-      const marked = await client.query(
-        `SELECT 1 FROM user_purchase_review_marks WHERE company_id=$1 AND user_id=$2`,
-        [auth.companyId, auth.userId],
-      )
-      const needsOrganizerApproval = marked.rows.length > 0
-
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO po_line_purchases
-           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance,
-            needs_organizer_approval)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-        [
-          lineId,
-          vendorId,
-          currencyCode,
-          qty,
-          actualUnitPrice,
-          auth.userId,
-          overTolerance,
-          needsOrganizerApproval,
-        ],
+           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [lineId, vendorId, currencyCode, qty, actualUnitPrice, auth.userId, overTolerance],
       )
       purchaseId = inserted.rows[0].id
 
@@ -37354,153 +37541,6 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
-    }
-    void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
-    return true
-  },
-
-  // The organizer's sign-off on what a marked buyer bought (migration 316). Approves every purchase on the requisition
-  // that is waiting for it and that the caller may approve: the organizer, or an admin acting for him, never the person who
-  // bought it. When the last one lands the requisition finishes buying by itself.
-  approveItemsBought: async (_: unknown, args: { requisitionId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const auth = ctx.auth as GWAuth
-    const reqRow = await query<{ status: string; company_id: string; organizer_id: string | null }>(
-      `SELECT status, company_id, organizer_id FROM requisitions WHERE id=$1`,
-      [args.requisitionId],
-    )
-    const req = reqRow.rows[0]
-    if (!req || req.company_id !== auth.companyId) throw new Error('Requisition not found')
-    if (req.status !== 'items_bought')
-      throw new Error('Requisition must be in items_bought status to approve the items bought')
-
-    const pending = await query<{ id: string; bought_by: string | null }>(
-      `SELECT plp.id, plp.bought_by FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
-        WHERE pl.requisition_id=$1 AND plp.needs_organizer_approval AND plp.organizer_approved_by IS NULL`,
-      [args.requisitionId],
-    )
-    if (pending.rows.length === 0)
-      throw new Error('No purchases are waiting for approval on this requisition')
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    const mine = pending.rows.filter((p) =>
-      canApproveMarkedPurchaseGW({
-        callerId: auth.userId,
-        callerIsAdmin: isAdmin,
-        organizerId: req.organizer_id,
-        boughtBy: p.bought_by,
-      }),
-    )
-    if (mine.length === 0)
-      throw new Error(
-        "Only the requisition's organizer, or an admin, can approve these purchases, and never the person who bought them",
-      )
-
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      await client.query(
-        `UPDATE po_line_purchases SET organizer_approved_by=$1, organizer_approved_at=NOW()
-          WHERE id = ANY($2::uuid[]) AND organizer_approved_by IS NULL`,
-        [auth.userId, mine.map((p) => p.id)],
-      )
-      await client.query(
-        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
-         VALUES ($1,'items_bought','items_bought','items_bought_approved',$2,$3)`,
-        [args.requisitionId, auth.userId, `${mine.length} purchase(s) approved`],
-      )
-      await client.query('COMMIT')
-    } catch (e) {
-      await client.query('ROLLBACK')
-      throw e
-    } finally {
-      client.release()
-    }
-    // The last thing a requisition was waiting for? Then it finishes buying by itself.
-    await tryAutoFinishBuying(args.requisitionId, auth)
-    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
-    return getRequisitionForReturn(args.requisitionId)
-  },
-
-  // The other option beside approveItemsBought: removes one purchase that is waiting for the organizer's approval, with a
-  // reason, so the buyer records it again. The buyer is told why. Same people as the approval, never the buyer.
-  sendBackPurchase: async (
-    _: unknown,
-    args: { purchaseId: string; reason: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const auth = ctx.auth as GWAuth
-    if (!args.reason.trim()) throw new Error('reason is required')
-    const row = await query<{
-      id: string
-      requisition_id: string
-      company_id: string
-      status: string
-      organizer_id: string | null
-      requisition_number: string
-      bought_by: string | null
-      needs_organizer_approval: boolean
-      organizer_approved_by: string | null
-      line_description: string | null
-    }>(
-      `SELECT plp.id, pl.requisition_id, req.company_id, req.status, req.organizer_id, req.requisition_number,
-              plp.bought_by, plp.needs_organizer_approval, plp.organizer_approved_by,
-              pl.description AS line_description
-         FROM po_line_purchases plp
-         JOIN po_lines pl ON pl.id=plp.po_line_id
-         JOIN requisitions req ON req.id=pl.requisition_id
-        WHERE plp.id=$1`,
-      [args.purchaseId],
-    )
-    const purchase = row.rows[0]
-    if (!purchase || purchase.company_id !== auth.companyId)
-      throw new Error('Purchase entry not found')
-    if (purchase.status !== 'items_bought')
-      throw new Error('Requisition must be in items_bought status to send a purchase back')
-    if (!purchase.needs_organizer_approval || purchase.organizer_approved_by)
-      throw new Error('This purchase is not waiting for approval — it cannot be sent back')
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    if (
-      !canApproveMarkedPurchaseGW({
-        callerId: auth.userId,
-        callerIsAdmin: isAdmin,
-        organizerId: purchase.organizer_id,
-        boughtBy: purchase.bought_by,
-      })
-    )
-      throw new Error(
-        "Only the requisition's organizer, or an admin, can send this purchase back, and never the person who bought it",
-      )
-
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      // po_line_purchases.receipt_attachment_id references document_attachments (not the other way around), so the
-      // purchase goes first, or deleting its still-referenced receipt trips the foreign key (same order as
-      // rejectTolerancePurchase).
-      await client.query(`DELETE FROM po_line_purchases WHERE id=$1`, [args.purchaseId])
-      await client.query(
-        `DELETE FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`,
-        [args.purchaseId],
-      )
-      await client.query(
-        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
-         VALUES ($1,'items_bought','items_bought','purchase_sent_back',$2,$3)`,
-        [purchase.requisition_id, auth.userId, args.reason.trim()],
-      )
-      await client.query('COMMIT')
-    } catch (e) {
-      await client.query('ROLLBACK')
-      throw e
-    } finally {
-      client.release()
-    }
-    if (purchase.bought_by) {
-      await notifyUserForRequisitionGW(purchase.bought_by, purchase.requisition_id, {
-        type: 'REQ_PURCHASE_SENT_BACK',
-        title: 'A purchase was sent back',
-        body: `${purchase.requisition_number}${purchase.line_description ? ` — ${purchase.line_description}` : ''}: ${args.reason.trim()}`,
-      })
     }
     void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
     return true
@@ -37762,10 +37802,449 @@ const phase5MutationResolvers = {
       `SELECT status, company_id FROM requisitions WHERE id=$1`,
       [args.id],
     )
-    if (current.rows[0]?.company_id === auth.companyId && current.rows[0].status === 'sourcing')
+    if (
+      current.rows[0]?.company_id === auth.companyId &&
+      ['organizer_review', 'review_approval', 'sourcing'].includes(current.rows[0].status)
+    )
       return getRequisitionForReturn(args.id)
     await finishBuyingRequisitionCore(args.id, auth)
     return getRequisitionForReturn(args.id)
+  },
+
+  // ── Organizer review (migration 329, playbook #115) ────────────────────────────────────────────────────────────
+  // After Items Bought the organizer double-checks what was bought. He may change a purchase's quantity or price; any
+  // change (or having recorded a purchase himself) sends the requisition to a PO Admin before any purchase order exists.
+
+  // The organizer changes one recorded purchase's quantity and/or unit price. The first edit keeps what it held when the
+  // review began (so the PO Admin sees was / now, and editing back to the original is no change), over-tolerance is judged
+  // again against the approved price, and the edit goes to the requisition's Log.
+  editReviewPurchase: async (
+    _: unknown,
+    args: { purchaseId: string; qty?: number | null; actualUnitPrice?: number | null },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (args.qty == null && args.actualUnitPrice == null)
+      throw new Error('Give a new quantity or a new price')
+    if (args.qty != null && !(args.qty > 0)) throw new Error('qty must be greater than 0')
+    if (args.actualUnitPrice != null && !(args.actualUnitPrice > 0))
+      throw new Error('actualUnitPrice must be greater than 0')
+
+    const found = await query<{ requisition_id: string }>(
+      `SELECT pl.requisition_id FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id WHERE plp.id=$1`,
+      [args.purchaseId],
+    )
+    const reqId = found.rows[0]?.requisition_id
+    if (!reqId) throw new Error('Purchase entry not found')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // Lock the requisition first (so a submit landing at the same moment either goes first or sees this edit), then the
+      // purchase and its line.
+      const reqRow = await client.query<{
+        status: string
+        company_id: string
+        organizer_id: string | null
+      }>(`SELECT status, company_id, organizer_id FROM requisitions WHERE id=$1 FOR UPDATE`, [
+        reqId,
+      ])
+      const req = reqRow.rows.at(0)
+      if (!req || req.company_id !== auth.companyId) throw new Error('Purchase entry not found')
+      if (req.status !== 'organizer_review')
+        throw new Error(
+          'Purchases can be changed only while the requisition is in Organizer Review',
+        )
+      if (
+        !canActOnReview({
+          callerId: auth.userId,
+          callerIsAdmin: isAdmin,
+          organizerId: req.organizer_id,
+        })
+      )
+        throw new Error(
+          "Only the requisition's organizer, or an admin, can change a purchase in the review",
+        )
+
+      const row = await client.query<{
+        id: string
+        po_line_id: string
+        qty: string
+        actual_unit_price: string
+        currency_code: string
+        review_original_qty: string | null
+        review_original_price: string | null
+        over_tolerance: boolean
+        tolerance_approved_by: string | null
+        qty_ordered: string
+        qty_from_stock: string | null
+        approved_unit_price: string | null
+        line_currency: string
+        short_marked_at: string | null
+        description: string
+      }>(
+        `SELECT plp.id, plp.po_line_id, plp.qty, plp.actual_unit_price, plp.currency_code,
+                plp.review_original_qty, plp.review_original_price, plp.over_tolerance, plp.tolerance_approved_by,
+                pl.qty_ordered, pl.qty_from_stock, pl.approved_unit_price, pl.currency_code AS line_currency,
+                pl.short_marked_at, pl.description
+           FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+          WHERE plp.id=$1 FOR UPDATE OF plp, pl`,
+        [args.purchaseId],
+      )
+      const p = row.rows.at(0)
+      if (!p) throw new Error('Purchase entry not found')
+      const current = { qty: parseFloat(p.qty), price: parseFloat(p.actual_unit_price) }
+      const next = {
+        qty: args.qty ?? current.qty,
+        price: args.actualUnitPrice ?? current.price,
+      }
+      if (
+        Math.abs(next.qty - current.qty) < 0.00005 &&
+        Math.abs(next.price - current.price) < 0.00005
+      )
+        throw new Error('That is what the purchase already says: nothing to change')
+
+      // The line must not be over-bought: every purchase of the line together, plus what stock covers, stays within what
+      // was ordered. (Being under-bought is allowed while editing, since moving quantity from one vendor's purchase to
+      // another's takes two edits; confirm and submit check the line is fully covered again.)
+      const others = await client.query<{ total: string }>(
+        `-- currency-safe: qty is a purchased quantity, not money
+         SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1 AND id<>$2`,
+        [p.po_line_id, p.id],
+      )
+      const capacity = parseFloat(p.qty_ordered) - parseFloat(p.qty_from_stock ?? '0')
+      const bought = parseFloat(others.rows[0]?.total ?? '0') + next.qty
+      if (bought > capacity + 0.0001)
+        throw new Error(
+          `Cannot make it ${next.qty}: the line needs ${capacity} in all and the other purchases already cover ${capacity - (bought - next.qty)}`,
+        )
+
+      // Over tolerance is judged again exactly as when the purchase was recorded: only against the price that was approved,
+      // in the currency it was approved in, with the company's tolerance for that currency.
+      let overTolerance = false
+      if (p.approved_unit_price != null && p.currency_code === p.line_currency) {
+        const approved = parseFloat(p.approved_unit_price)
+        const tol = await client.query<{ tolerance_pct: string; tolerance_abs: string }>(
+          `SELECT tolerance_pct, tolerance_abs FROM company_price_tolerance WHERE company_id=$1 AND currency_code=$2`,
+          [auth.companyId, p.currency_code],
+        )
+        if (tol.rows[0]) {
+          const allowance = Math.min(
+            approved * (parseFloat(tol.rows[0].tolerance_pct) / 100),
+            parseFloat(tol.rows[0].tolerance_abs),
+          )
+          overTolerance = next.price > approved + allowance
+        }
+      }
+      // A changed price is a new price: an earlier sign-off no longer applies to it.
+      const priceChanged = Math.abs(next.price - current.price) > 0.00005
+      const approvedBy = overTolerance && !priceChanged ? p.tolerance_approved_by : null
+
+      const originals = nextReviewOriginals({
+        current,
+        originals: {
+          qty: p.review_original_qty != null ? parseFloat(p.review_original_qty) : null,
+          price: p.review_original_price != null ? parseFloat(p.review_original_price) : null,
+        },
+        next,
+      })
+      await client.query(
+        `UPDATE po_line_purchases
+            SET qty=$2, actual_unit_price=$3, over_tolerance=$4, tolerance_approved_by=$5,
+                review_original_qty=$6, review_original_price=$7,
+                review_edited_by=CASE WHEN $6::numeric IS NULL AND $7::numeric IS NULL THEN NULL ELSE $8::uuid END,
+                review_edited_at=CASE WHEN $6::numeric IS NULL AND $7::numeric IS NULL THEN NULL ELSE NOW() END
+          WHERE id=$1`,
+        [
+          p.id,
+          next.qty,
+          next.price,
+          overTolerance,
+          approvedBy,
+          originals.qty,
+          originals.price,
+          auth.userId,
+        ],
+      )
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'organizer_review','organizer_review','review_purchase_edited',$2,$3)`,
+        [
+          reqId,
+          auth.userId,
+          describeReviewEdit({
+            description: p.description,
+            currency: p.currency_code,
+            before: current,
+            after: next,
+          }),
+        ],
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', reqId, 'updated')
+    return getPOLinePurchaseForReturn(args.purchaseId)
+  },
+
+  // The organizer confirms: nothing was changed and he did not record any purchase himself, so no PO Admin is needed.
+  // The purchase orders are created now and the requisition moves to Sourcing.
+  confirmReview: async (_: unknown, args: { requisitionId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error("Only the requisition's organizer, or an admin, can confirm the review")
+    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true })
+    if (gates) throw new Error(gates)
+    const counts = await reviewCountsGW(args.requisitionId, req.organizer_id)
+    if (reviewNeedsApproval(counts))
+      throw new Error(
+        `A PO Admin must approve this first (${reviewApprovalReason(counts)}): submit it for approval instead of confirming`,
+      )
+    await forkChildPurchaseOrders(args.requisitionId, auth, 'organizer_review', 'confirm_review', {
+      // Re-read inside the transaction, so an edit landing at the same moment cannot slip past the check above.
+      beforeFork: async (client) => {
+        if (reviewNeedsApproval(await reviewCountsGW(args.requisitionId, req.organizer_id, client)))
+          throw new Error('The review changed while confirming: submit it for approval instead')
+      },
+    })
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // The organizer changed a purchase, or recorded some himself: a PO Admin has to approve before any PO is created.
+  submitReviewForApproval: async (
+    _: unknown,
+    args: { requisitionId: string; notes?: string | null },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can submit the review for approval",
+      )
+    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true })
+    if (gates) throw new Error(gates)
+    const counts = await reviewCountsGW(args.requisitionId, req.organizer_id)
+    const why = reviewApprovalReason(counts)
+    if (!why) throw new Error('Nothing needs a PO Admin: confirm the review instead')
+    const note = args.notes?.trim()
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await reqTransition(
+        client,
+        args.requisitionId,
+        'organizer_review',
+        'review_approval',
+        'submit_review',
+        auth,
+        note ? `${why}. ${note}` : why,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    await notifyReviewApprovers(args.requisitionId, why)
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // A PO Admin (or an admin), never the organizer, approves: any over-tolerance purchase the organizer's edit brought back is
+  // signed off with it, the purchase orders are created and the requisition moves to Sourcing.
+  approveReview: async (_: unknown, args: { requisitionId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'review_approval')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const isPoAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (
+      !canApproveReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        callerIsPoAdmin: isPoAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only a PO Admin or an admin can approve this, and never the requisition's organizer",
+      )
+    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true })
+    if (gates) throw new Error(gates)
+    await forkChildPurchaseOrders(args.requisitionId, auth, 'review_approval', 'approve_review', {
+      actorPosition: isAdmin ? 'admin' : 'po_admin',
+      beforeFork: async (client) => {
+        await client.query(
+          `UPDATE po_line_purchases plp SET tolerance_approved_by=$2
+             FROM po_lines pl
+            WHERE pl.id=plp.po_line_id AND pl.requisition_id=$1
+              AND plp.over_tolerance=true AND plp.tolerance_approved_by IS NULL`,
+          [args.requisitionId, auth.userId],
+        )
+      },
+    })
+    void notifyOrganizerReviewDecided(args.requisitionId, true)
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // The same people refuse: back to the organizer, with a reason he sees. What he changed stays as it is.
+  rejectReview: async (
+    _: unknown,
+    args: { requisitionId: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const reason = args.reason.trim()
+    if (!reason) throw new Error('reason is required')
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'review_approval')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    const isPoAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (
+      !canApproveReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        callerIsPoAdmin: isPoAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only a PO Admin or an admin can send this back, and never the requisition's organizer",
+      )
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await reqTransition(
+        client,
+        args.requisitionId,
+        'review_approval',
+        'organizer_review',
+        'reject_review',
+        auth,
+        reason,
+        isAdmin ? 'admin' : 'po_admin',
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    await notifyOrganizerReviewDecided(args.requisitionId, false, reason)
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // The organizer returns the requisition to the buyers, with a reason, optionally removing purchases (and their receipts)
+  // so they are recorded again. It will come back to the review by itself once everything is bought again.
+  sendBackToBuying: async (
+    _: unknown,
+    args: { requisitionId: string; reason: string; purchaseIds?: string[] | null },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const reason = args.reason.trim()
+    if (!reason) throw new Error('reason is required')
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can send the requisition back",
+      )
+    const remove = [...new Set(args.purchaseIds ?? [])]
+
+    const client = await pool.connect()
+    let toNotify: string[] = []
+    try {
+      await client.query('BEGIN')
+      await client.query(`SELECT 1 FROM requisitions WHERE id=$1 FOR UPDATE`, [args.requisitionId])
+      const all = await client.query<{ id: string; bought_by: string | null }>(
+        `SELECT plp.id, plp.bought_by FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
+          WHERE pl.requisition_id=$1`,
+        [args.requisitionId],
+      )
+      const known = new Set(all.rows.map((r) => r.id))
+      const stranger = remove.find((id) => !known.has(id))
+      if (stranger) throw new Error('A purchase named here does not belong to this requisition')
+      const removedBuyers = all.rows.flatMap((r) =>
+        remove.includes(r.id) && r.bought_by ? [r.bought_by] : [],
+      )
+      toNotify =
+        removedBuyers.length > 0
+          ? removedBuyers
+          : all.rows.flatMap((r) => (r.bought_by ? [r.bought_by] : []))
+      for (const id of remove) {
+        // po_line_purchases.receipt_attachment_id references document_attachments (not the other way around), so the
+        // purchase goes first or deleting its still-referenced receipt trips the foreign key (playbook #21).
+        await client.query(`DELETE FROM po_line_purchases WHERE id=$1`, [id])
+        await client.query(
+          `DELETE FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`,
+          [id],
+        )
+      }
+      // A new review starts clean: what is left keeps its (edited) values, and nothing counts as changed any more.
+      await client.query(
+        `UPDATE po_line_purchases plp
+            SET review_original_qty=NULL, review_original_price=NULL, review_edited_by=NULL, review_edited_at=NULL
+           FROM po_lines pl WHERE pl.id=plp.po_line_id AND pl.requisition_id=$1`,
+        [args.requisitionId],
+      )
+      await reqTransition(
+        client,
+        args.requisitionId,
+        'organizer_review',
+        'items_bought',
+        'send_back_to_buying',
+        auth,
+        remove.length > 0 ? `${reason} (${remove.length} purchase(s) removed)` : reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    await notifyBuyersSentBack(
+      args.requisitionId,
+      toNotify.filter((id) => id !== auth.userId),
+      reason,
+    )
+    return getRequisitionForReturn(args.requisitionId)
   },
 
   // G1 PR 5 — cancels one child PO on its own (vendor backed out, wrong
@@ -39965,54 +40444,6 @@ const phase5MutationResolvers = {
       `UPDATE po_position_assignments SET is_active=false, updated_at=NOW() WHERE id=$1 AND company_id=$2`,
       [args.id, owner.company_id],
     )
-    return true
-  },
-
-  // Mark (or un-mark) a user whose purchases at Items Bought must be approved by the requisition's organizer before the
-  // requisition continues (migration 316). Same admins as the PO positions: system_admin or the PO Admin position. The
-  // user must belong to the company, so a mark cannot be planted on someone else's account.
-  setUserPurchaseReview: async (
-    _: unknown,
-    args: { userId: string; required: boolean; companyId?: string | null },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    if (
-      ctx.auth.role !== 'system_admin' &&
-      !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
-    )
-      throw new Error('system_admin role or PO Admin position required')
-    // The Settings screen can be looking at another company than the admin's session: the mark goes to the company being
-    // shown, and only a system_admin reaches across companies.
-    const companyId = args.companyId ?? ctx.auth.companyId
-    if (companyId !== ctx.auth.companyId && ctx.auth.role !== 'system_admin')
-      throw new Error('system_admin role required to manage another company')
-    const member = await query(
-      `SELECT 1 FROM user_company_roles WHERE user_id=$1 AND company_id=$2 AND is_active=true LIMIT 1`,
-      [args.userId, companyId],
-    )
-    if (!member.rows[0]) throw new Error('User not found in this company')
-    if (args.required) {
-      await query(
-        `INSERT INTO user_purchase_review_marks (company_id, user_id, marked_by)
-         VALUES ($1,$2,$3) ON CONFLICT (company_id, user_id) DO NOTHING`,
-        [companyId, args.userId, ctx.auth.userId],
-      )
-    } else {
-      await query(`DELETE FROM user_purchase_review_marks WHERE company_id=$1 AND user_id=$2`, [
-        companyId,
-        args.userId,
-      ])
-    }
-    await logAudit({
-      userId: ctx.auth.userId,
-      companyId,
-
-      action: args.required ? 'purchase_review_marked' : 'purchase_review_unmarked',
-      tableName: 'user_purchase_review_marks',
-      recordId: args.userId,
-      newValues: { required: args.required },
-    })
     return true
   },
 

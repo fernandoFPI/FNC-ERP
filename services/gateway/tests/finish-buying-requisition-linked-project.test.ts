@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 
 const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'finish-buying-linked-project-test@fnc-erp.local'
@@ -162,6 +163,8 @@ describe('finishBuyingRequisition — linked_project_id on the forked child PO',
       ctx as never,
     )
     await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    // the purchase orders are created after the organizer's review (the organizer bought them here, so a PO Admin approves)
+    await passReview(reqId, ctx)
 
     const line = await pool.query<{ po_id: string }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
     const poId = line.rows[0]!.po_id

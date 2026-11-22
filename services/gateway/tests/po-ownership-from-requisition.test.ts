@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 import { backfillPoOwnership, planOwnership } from '../src/scripts/backfill-po-ownership.js'
 
 const NAME_PREFIX = 'POOWN-TEST-'
@@ -116,6 +117,9 @@ async function forkRequisition(
   )
   // the buying finished by itself; the button is the fallback and must change nothing now
   await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctxFor(finisher, 'system_admin', company))
+  // The purchase orders are created when the organizer's review is confirmed (migration 329). The finisher, an admin acting
+  // for him, confirms: so the person who triggers the fork is still NOT the organizer, which is what this file pins.
+  await passReview(reqId, ctxFor(finisher, 'system_admin', company))
 
   const poId = (await pool.query<{ po_id: string }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])).rows[0]!.po_id
   return { reqId, poId, lineId }
