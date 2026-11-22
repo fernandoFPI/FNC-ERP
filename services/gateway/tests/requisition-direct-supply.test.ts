@@ -11,6 +11,7 @@ import { ApolloServer } from '@apollo/server'
 import { pool } from '@fnc-erp/db'
 import { typeDefs } from '../src/graphql/schema.js'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 import {
   DIRECT_SUPPLY_DESTINATION,
   childPurchaseOrderPurpose,
@@ -605,7 +606,10 @@ describe('from approval to completion', () => {
     await buy(pipe!, 10, 12.5)
     await buy(valve!, 2, 40)
     // Finish Buying happens by itself once the last purchase is in; the button is the fallback and is harmless then.
+    // It moves the requisition to the organizer's review (no purchase order yet); the organizer confirms (playbook #115).
     await resolvers.Mutation.finishBuyingRequisition(null, { id }, ctxFor('admin') as never)
+    expect(await statusOf(id)).toBe('organizer_review')
+    await passReview(id, ctxFor('organizer'), ctxFor('admin2'))
     expect(await statusOf(id)).toBe('sourcing')
 
     const pos = await pool.query(
@@ -633,6 +637,7 @@ describe('from approval to completion', () => {
       'approve',
       'start_buying',
       'finish_buying',
+      'confirm_review',
       'complete',
     ])
   })

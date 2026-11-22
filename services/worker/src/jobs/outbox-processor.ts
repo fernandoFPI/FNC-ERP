@@ -1838,12 +1838,15 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     // equivalents never got that (see the comment at PO_INVENTORY_CHECK_REQUIRED
     // and friends: those are in-app only), but this is a brand-new
     // notification path with no established in-app-only precedent, so it
-    // starts with both.
+    // starts with both. REQ_REVIEW_REQUIRED and REQ_REVIEW_APPROVAL_REQUIRED (migration 329) are the organizer review's
+    // "waiting on you" notices: the organizer is asked to review what was bought, a PO Admin to approve what he changed.
     case 'REQ_INVENTORY_CHECK_REQUIRED':
     case 'REQ_STORE_PRICING_REQUIRED':
     case 'REQ_MARKET_PRICING_REQUIRED':
     case 'REQ_PRICE_VERIFICATION_REQUIRED':
     case 'REQ_STALE_STOCK_COST':
+    case 'REQ_REVIEW_REQUIRED':
+    case 'REQ_REVIEW_APPROVAL_REQUIRED':
     case 'REQ_APPROVAL_REQUIRED': {
       const reqRes = await pool.query<{
         company_id: string
@@ -1914,11 +1917,11 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
 
-    // Items Bought's extra layer of approval (migration 316). In-app only, like the PO notices above: the organizer is
-    // told what is waiting for him, a buyer is told why a purchase was sent back. Payload from the gateway's
-    // notifyUserForRequisitionGW: { userId, requisitionId, type, title, body }.
-    case 'REQ_PURCHASES_APPROVAL_REQUIRED':
-    case 'REQ_PURCHASE_SENT_BACK': {
+    // The outcome notices of the organizer review (migration 329). In-app only, like the PO notices above: the organizer is
+    // told a PO Admin decided, the buyers are told the requisition was sent back to Items Bought and why. Payload from the
+    // gateway's notifyUserForRequisitionGW: { userId, requisitionId, type, title, body }.
+    case 'REQ_REVIEW_DECIDED':
+    case 'REQ_SENT_BACK_TO_BUYING': {
       const reqRes = await pool.query<{ company_id: string; requisition_number: string }>(
         `SELECT company_id, requisition_number FROM requisitions WHERE id=$1`,
         [String(p['requisitionId'])],

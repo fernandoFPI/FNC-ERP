@@ -51,6 +51,7 @@ import { useTableView } from '../../../hooks/useTableView'
 import { Button } from '../../../components/ui/Button'
 import { PhaseBar } from '../../../components/procurement/PhaseBar'
 import { StageActionBar } from '../../../components/procurement/StageActionBar'
+import { OrganizerReviewPanel } from '../../../components/procurement/OrganizerReviewPanel'
 import { LinePriceInput } from '../../../components/procurement/LinePriceInput'
 import { InlineSelect } from '../../../components/procurement/InlineSelect'
 import { StaleCostNotice } from '../../../components/procurement/StaleCostNotice'
@@ -156,9 +157,6 @@ interface Purchase {
   bought_at: string
   bought_by_name?: string | null
   over_tolerance: boolean
-  // The extra layer of approval on Items Bought (migration 316).
-  needs_organizer_approval?: boolean | null
-  organizer_approved_by?: string | null
 }
 
 interface ReqLine {
@@ -759,6 +757,8 @@ export default function RequisitionDetail() {
   const [rejectReason, setRejectReason] = useState('')
   // The dialog behind the Send back button (price verification and pending approval).
   const [sendBackOpen, setSendBackOpen] = useState(false)
+  // The organizer review draws its action bar into this element at the very end of the page, so it sticks to the bottom.
+  const [reviewBarSlot, setReviewBarSlot] = useState<HTMLElement | null>(null)
   // Per-line review flags for the price_verification/pending_approval reject
   // boxes — key=lineId, value=that line's own reason. At least one is
   // required to reject (see applyLineFlags's own comment); the overall
@@ -853,10 +853,6 @@ export default function RequisitionDetail() {
   // Direct supply (always tied to a project): no inventory check and no pricing step. Draft goes straight to the
   // approver, who sees the Est. Unit Price typed at creation; the pricing columns below would only ever be empty.
   const isDirectSupply = req.purpose === DIRECT_SUPPLY_PURPOSE
-  // Purchases by a marked buyer that the organizer has not approved yet: the requisition waits in Items Bought for them.
-  const awaitingOrganizerApproval = req.lines
-    .flatMap((l) => l.purchases ?? [])
-    .filter((p) => p.needs_organizer_approval && !p.organizer_approved_by).length
   const canSubmitDraft = isSystemLevel || isOrganizer
   // Deliberately NOT isOrganizer — only a Store Keeper (or admin) can
   // confirm inventory check, even for your own requisition.
@@ -1217,6 +1213,8 @@ export default function RequisitionDetail() {
       'pending_approval',
       'approved',
       'items_bought',
+      'organizer_review',
+      'review_approval',
       'sourcing',
       'completed',
     ].includes(req.status)
@@ -1391,6 +1389,8 @@ export default function RequisitionDetail() {
       'pending_approval',
       'approved',
       'items_bought',
+      'organizer_review',
+      'review_approval',
       'sourcing',
       'completed',
     ].includes(req.status)
@@ -1449,6 +1449,8 @@ export default function RequisitionDetail() {
       'pending_approval',
       'approved',
       'items_bought',
+      'organizer_review',
+      'review_approval',
       'sourcing',
       'completed',
     ].includes(req.status)
@@ -1498,6 +1500,8 @@ export default function RequisitionDetail() {
       'pending_approval',
       'approved',
       'items_bought',
+      'organizer_review',
+      'review_approval',
       'sourcing',
       'completed',
     ].includes(req.status)
@@ -1582,6 +1586,8 @@ export default function RequisitionDetail() {
       'pending_approval',
       'approved',
       'items_bought',
+      'organizer_review',
+      'review_approval',
       'sourcing',
       'completed',
     ].includes(req.status)
@@ -1617,7 +1623,9 @@ export default function RequisitionDetail() {
           },
         ]
       : []),
-    ...(['items_bought', 'sourcing', 'completed'].includes(req.status)
+    ...(['items_bought', 'organizer_review', 'review_approval', 'sourcing', 'completed'].includes(
+      req.status,
+    )
       ? [
           {
             key: 'purchases',
@@ -2200,6 +2208,15 @@ export default function RequisitionDetail() {
             {t('req.detail.thisRequisitionIsNoLongerActive')}
           </div>
         </Card>
+      )}
+
+      {/* The organizer review (migration 329): between Items Bought and Sourcing the organizer double-checks what was bought. */}
+      {(req.status === 'organizer_review' || req.status === 'review_approval') && (
+        <OrganizerReviewPanel
+          requisition={req}
+          barSlot={reviewBarSlot}
+          onChanged={() => void refetch()}
+        />
       )}
 
       {/* The lines (and the other tabs) take the full width. Under them, also full width, come the cards about
@@ -3443,13 +3460,6 @@ export default function RequisitionDetail() {
               : t('req.detail.itemsBoughtInProgress')
           }
           hint={t('req.detail.recordingPurchasesPerVendorHappensOn')}
-          status={
-            req.status === 'items_bought' && awaitingOrganizerApproval > 0 ? (
-              <Badge variant="warning">
-                {t('req.detail.waitingForOrganizerApproval', { count: awaitingOrganizerApproval })}
-              </Badge>
-            ) : undefined
-          }
         >
           {req.status === 'items_bought' && (
             <Button
@@ -3470,6 +3480,8 @@ export default function RequisitionDetail() {
           status={barNote(t('req.detail.waitingOnEveryLineToResolve'))}
         />
       )}
+
+      <div ref={setReviewBarSlot} />
 
       <SendBackDialog
         open={sendBackOpen}

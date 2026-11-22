@@ -25,7 +25,7 @@ import { logAudit } from '@fnc-erp/audit'
 import { coverRequisitionStockLines, uncoveredRequisitionStockLines } from '../graphql/resolvers.js'
 
 // Post-approval, not finished: the only states a requisition can be waiting on a Store Out in.
-const OPEN_STATUSES = ['approved', 'items_bought', 'sourcing']
+const OPEN_STATUSES = ['approved', 'items_bought', 'organizer_review', 'review_approval', 'sourcing']
 
 export interface PlannedLine {
   line: number

@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 
 const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'g1-finish-buying-test@fnc-erp.local'
@@ -127,6 +128,12 @@ async function makeReqAtItemsBought(opts: {
   const result = await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
   expect((result as { status: string }).status).toBe('items_bought')
   return { reqId, lineId, productId }
+}
+
+// Finish Buying now ends in the organizer's review (migration 329); the purchase orders exist once it passes.
+async function finishAndFork(reqId: string): Promise<void> {
+  await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+  await passReview(reqId, ctx)
 }
 
 async function recordPurchase(
@@ -320,7 +327,10 @@ describe('finishBuyingRequisition', () => {
     // needs a different supervisor.
     await resolvers.Mutation.approveTolerancePurchase(null, { purchaseId: p.id }, secondAdminCtx as never)
     const result = await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
-    expect((result as { status: string }).status).toBe('sourcing')
+    // buying is finished and the organizer's review comes next; the purchase orders are created when it passes
+    expect((result as { status: string }).status).toBe('organizer_review')
+    await passReview(reqId, ctx)
+    expect((await pool.query(`SELECT status FROM requisitions WHERE id=$1`, [reqId])).rows[0].status).toBe('sourcing')
   })
 
   it('rejects from a user with no buyer position, allows one holding it', async () => {
@@ -333,13 +343,15 @@ describe('finishBuyingRequisition', () => {
     await pool.query(`UPDATE po_position_assignments SET is_active=true WHERE employee_id=$1`, [buyerEmployeeId])
 
     const result = await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, buyerCtx as never)
-    expect((result as { status: string }).status).toBe('sourcing')
+    expect((result as { status: string }).status).toBe('organizer_review')
+    await passReview(reqId, ctx)
+    expect((await pool.query(`SELECT status FROM requisitions WHERE id=$1`, [reqId])).rows[0].status).toBe('sourcing')
   })
 
   it('simple case: single vendor, nothing from stock — mutates the line in place, no new row', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 8, marketPrice: 15 })
     await recordPurchase(lineId, vendorAId, 8, 15)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const line = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string; actual_unit_price: string | null; currency_code: string }>(
       `SELECT po_id, qty_ordered, unit_price, actual_unit_price, currency_code FROM po_lines WHERE id=$1`,
@@ -370,7 +382,7 @@ describe('finishBuyingRequisition', () => {
   it('exposes the parent requisition_number as requisitionNumber on the forked child PO', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 4, marketPrice: 12 })
     await recordPurchase(lineId, vendorAId, 4, 12)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const parentReq = await pool.query<{ requisition_number: string }>(
       `SELECT requisition_number FROM requisitions WHERE id=$1`,
@@ -404,7 +416,7 @@ describe('finishBuyingRequisition', () => {
     expect(reqRow.rows[0]!.linked_mo_id).toBe(moId)
 
     await recordPurchase(lineId, vendorAId, 5, 12)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const line = await pool.query<{ po_id: string | null }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
     const childId = line.rows[0]!.po_id!
@@ -425,7 +437,7 @@ describe('finishBuyingRequisition', () => {
   it('entityAttachments(purchase_order, childPoId) surfaces the receipt recorded at Items Bought', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 8, marketPrice: 15 })
     await recordPurchase(lineId, vendorAId, 8, 15)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const line = await pool.query<{ po_id: string | null }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
     const childPoId = line.rows[0]!.po_id!
@@ -442,7 +454,7 @@ describe('finishBuyingRequisition', () => {
   it('mixed case: partly from stock, rest from one vendor — original row keeps the stock portion, a new row carries the purchase', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 10, marketPrice: 15, qtyFromStock: 4 })
     await recordPurchase(lineId, vendorAId, 6, 15)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const original = await pool.query<{ po_id: string | null; qty_ordered: string; qty_from_stock: string }>(
       `SELECT po_id, qty_ordered, qty_from_stock FROM po_lines WHERE id=$1`,
@@ -472,7 +484,7 @@ describe('finishBuyingRequisition', () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 10, marketPrice: 20 })
     await recordPurchase(lineId, vendorAId, 6, 20)
     await recordPurchase(lineId, vendorBId, 4, 20) // same price, stays within tolerance
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const allLines = await pool.query<{ id: string; po_id: string; qty_ordered: string; actual_unit_price: string | null; origin_line_id: string | null }>(
       `SELECT pl.id, pl.po_id, pl.qty_ordered, pl.actual_unit_price, pl.origin_line_id FROM po_lines pl WHERE pl.requisition_id=$1`,
@@ -531,7 +543,7 @@ describe('finishBuyingRequisition', () => {
     )
 
     await recordPurchase(lineId, vendorAId, 6, 15)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     // Same lineId, unaffected by the fork/reduction — po_lines.id never
     // changes, only the row's other columns do.
@@ -560,8 +572,11 @@ describe('finishBuyingRequisition', () => {
   it('short-marked line with nothing ever bought: no purchases recorded — transitions straight to sourcing with no fork', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 5, marketPrice: 10 })
     await resolvers.Mutation.markRequisitionLineShort(null, { lineId, reason: 'vendor discontinued the item' }, ctx as never)
+    // marking the last line short finished the buying by itself; the review comes next, and confirming it forks nothing
     const result = await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
-    expect((result as { status: string }).status).toBe('sourcing')
+    expect((result as { status: string }).status).toBe('organizer_review')
+    await passReview(reqId, ctx)
+    expect((await pool.query(`SELECT status FROM requisitions WHERE id=$1`, [reqId])).rows[0].status).toBe('sourcing')
 
     const children = await pool.query(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [reqId])
     expect(children.rows).toHaveLength(0)
@@ -574,7 +589,7 @@ describe('requisitionChildPurchaseOrders', () => {
   it('returns the forked child with its vendor name', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 4, marketPrice: 12 })
     await recordPurchase(lineId, vendorAId, 4, 12)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
 
     const children = await resolvers.Query.requisitionChildPurchaseOrders(null, { requisitionId: reqId }, ctx as never)
     expect((children as { vendor_id: string; vendor_name: string }[])).toHaveLength(1)
@@ -587,7 +602,7 @@ describe('PurchaseOrder.isLegacyNoPurchaseRecord', () => {
   it('is false for a Finish-Buying-forked child, true for one with no purchase records', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 3, marketPrice: 9 })
     await recordPurchase(lineId, vendorAId, 3, 9)
-    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+    await finishAndFork(reqId)
     const child = await pool.query<{ id: string }>(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [reqId])
     const isLegacyReal = await (resolvers as unknown as { PurchaseOrder: { isLegacyNoPurchaseRecord: (p: { id: string }) => Promise<boolean> } })
       .PurchaseOrder.isLegacyNoPurchaseRecord({ id: child.rows[0]!.id })

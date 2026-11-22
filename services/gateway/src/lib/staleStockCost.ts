@@ -29,6 +29,9 @@ export const STOCK_COST_WATCH_STATUSES = [
   'pending_approval',
   'approved',
   'items_bought',
+  // the organizer review sits between Items Bought and Sourcing; its from-stock Store Outs are still unconfirmed (migration 329)
+  'organizer_review',
+  'review_approval',
   'sourcing',
 ] as const
 

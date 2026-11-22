@@ -158,10 +158,34 @@ export const REQUISITION_QUERY = gql`
           qty
           actual_unit_price
           bought_at
+          bought_by
           bought_by_name
-          needs_organizer_approval
-          organizer_approved_by
           over_tolerance
+          tolerance_approved_by
+          receipt_file_id
+          review_original_qty
+          review_original_price
+        }
+      }
+      # The organizer review (migration 329): filled only while the requisition is in organizer_review or review_approval.
+      review {
+        needs_approval
+        approval_reason
+        edited_count
+        organizer_bought_count
+        unsigned_tolerance_count
+        caller_can_edit
+        caller_can_approve
+        last_rejection {
+          reason
+          by_name
+          at
+        }
+        totals {
+          currency_code
+          was
+          now
+          purchases
         }
       }
       approval_log {
@@ -512,32 +536,69 @@ export const REQUISITION_ITEMS_BOUGHT_QUERY = gql`
           tolerance_approved_by_name
           receipt_file_id
           receipt_filename
-          needs_organizer_approval
-          organizer_approved_by
-          organizer_approved_by_name
-          organizer_approved_at
-          caller_can_approve
         }
       }
     }
   }
 `
 
-// The extra layer of approval on Items Bought (migration 316): the organizer, or an admin, approves every purchase of the
-// requisition that is waiting for the caller; the requisition then finishes buying by itself when nothing else is missing.
-export const APPROVE_ITEMS_BOUGHT = gql`
-  mutation ApproveItemsBought($requisitionId: ID!) {
-    approveItemsBought(requisitionId: $requisitionId) {
+// ── The organizer review (migration 329, playbook #115) ──────────────────────────────────────────────────────
+// After Items Bought the organizer double-checks what was bought: he may change a purchase's quantity or price, confirm,
+// ask a PO Admin to approve what he changed, or send the requisition back to the buyers. A PO Admin approves or rejects.
+export const EDIT_REVIEW_PURCHASE = gql`
+  mutation EditReviewPurchase($purchaseId: ID!, $qty: Float, $actualUnitPrice: Float) {
+    editReviewPurchase(purchaseId: $purchaseId, qty: $qty, actualUnitPrice: $actualUnitPrice) {
+      id
+      qty
+      actual_unit_price
+      review_original_qty
+      review_original_price
+    }
+  }
+`
+
+export const CONFIRM_REVIEW = gql`
+  mutation ConfirmReview($requisitionId: ID!) {
+    confirmReview(requisitionId: $requisitionId) {
       id
       status
     }
   }
 `
 
-// ...or removes one purchase that is waiting, with a reason, so the buyer records it again.
-export const SEND_BACK_PURCHASE = gql`
-  mutation SendBackPurchase($purchaseId: ID!, $reason: String!) {
-    sendBackPurchase(purchaseId: $purchaseId, reason: $reason)
+export const SUBMIT_REVIEW_FOR_APPROVAL = gql`
+  mutation SubmitReviewForApproval($requisitionId: ID!, $notes: String) {
+    submitReviewForApproval(requisitionId: $requisitionId, notes: $notes) {
+      id
+      status
+    }
+  }
+`
+
+export const APPROVE_REVIEW = gql`
+  mutation ApproveReview($requisitionId: ID!) {
+    approveReview(requisitionId: $requisitionId) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_REVIEW = gql`
+  mutation RejectReview($requisitionId: ID!, $reason: String!) {
+    rejectReview(requisitionId: $requisitionId, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const SEND_BACK_TO_BUYING = gql`
+  mutation SendBackToBuying($requisitionId: ID!, $reason: String!, $purchaseIds: [ID!]) {
+    sendBackToBuying(requisitionId: $requisitionId, reason: $reason, purchaseIds: $purchaseIds) {
+      id
+      status
+    }
   }
 `
 
