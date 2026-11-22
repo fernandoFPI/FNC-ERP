@@ -1091,7 +1091,7 @@ Don't re-derive, check these first.
     `RequisitionDetail.test.tsx` and the organizer / record-all blocks in `ItemsBoughtPage.test.tsx`. Not verified in a
     browser. Related to #24 (a gate and the list that mirrors it) and #23 (one thing, several code paths).
 
-60. **An approval layer for chosen users, and four traps it turned up (a mark with no home, a screen that shows one company
+60. *(The marked-buyer approval itself was removed on 2026-11-22, folded into the organizer review, #115. Its traps below still apply.)* **An approval layer for chosen users, and four traps it turned up (a mark with no home, a screen that shows one company
     and writes to another, a notification the worker cannot read, and a mock that loops).** An admin can now mark users
     whose purchases at Items Bought must be approved by the requisition's organizer before the requisition continues
     (migration 316). Design, and why:
@@ -3882,3 +3882,58 @@ Don't re-derive, check these first.
     registered handler, where a test that re-registers one proves nothing about the app's; `@typescript-eslint` flags `!` and a void arrow
     in a test, so use a throwing helper and braces. Not verified in a browser (the toast, a two-tab switch). Related to #85b (a reference
     the request names was never checked against the company), #87e, #60.1 (a screen that shows one company and writes to another) and #9.
+
+115. **A step inserted in front of a fork: everything that did "last action, then the fork" has to change, a rule decided by role must be one
+    function, and a test helper that acts as admin can make a refusal vanish.** The user asked for a step between Items Bought and Sourcing:
+    the organizer double-checks what was bought and its receipts, may change it, and a change needs a PO Admin's approval before the
+    requisition "becomes a PO". Before building, the questions that were the user's to decide were asked with the numbers from production
+    (258 requisitions finished buying in 60 days, the organizer bought everything himself on 30 of them, one PO Admin per company, Items
+    Bought takes a median of 31 hours): the organizer may change price and quantity and send the requisition back to Items Bought (not the
+    vendor or the receipts); when the organizer recorded any purchase himself the review always needs a PO Admin; the marked-buyer
+    approval (#60) is folded in and removed (production had 0 marked users and 0 flagged purchases, so nothing was lost); the review is
+    always shown, even when nothing was bought. A requisition that skips Items Bought altogether (all covered from stock, approved
+    straight to Sourcing) has no review: there is no Items Bought step for it to follow. The rules are in `domain.md`.
+    What changed in the code. (a) *The fork moved.* `finishBuyingRequisitionCore` used to check readiness, fork one child PO per vendor
+    and move to Sourcing. It now only checks readiness and moves to `organizer_review` (action `finish_buying`, which now means "buying is
+    finished"), and tells the organizer; the fork became `forkChildPurchaseOrders(reqId, auth, fromStatus, action, { beforeFork })`,
+    called by `confirmReview` and `approveReview`. The state-machine edge `items_bought -> sourcing` is gone. (b) *One place for who may
+    do what*: `lib/requisitionReview.ts` (`canActOnReview`, `canApproveReview`, `reviewNeedsApproval`, `nextReviewOriginals`), the server
+    sends the answers to the page as `review.caller_can_edit` / `caller_can_approve` (the page keeps no copy), and the My Queue SQL carries
+    the same rule for the approver (never the organizer, even an organizer who is an admin). (c) *The first edit keeps what it was*
+    (`po_line_purchases.review_original_qty` / `_price`, migration 329); editing back clears it, so a no-op review needs nobody; an edit
+    re-judges over-tolerance against the approved price, a changed price loses an earlier sign-off, and approving signs off what the
+    edit brought back inside the same transaction as the fork (`beforeFork`). (d) *Send back* removes the chosen purchases and their
+    receipts (purchase first, #21), clears the markers and returns to Items Bought; it comes back to the review by itself. (e) Four new
+    `REQ_*` notices (organizer, approvers, decision, buyers) each need a worker case (#60); the guard test covers them. (f) The removal
+    of the marked-buyer approval left the table `user_purchase_review_marks` and three columns of `po_line_purchases` in place, unused
+    (migrations are forward-only; drop them in a later one).
+    Traps met. 1. *71 tests in 11 files assumed the fork happens when the last purchase is recorded* (grep for who calls
+    `recordLinePurchase` or `finishBuyingRequisition` and then reads `purchase_orders`). Fixed with one helper, `tests/review-helpers.ts`
+    (`passReview`: confirm, or submit and approve when a PO Admin is needed; the single-user fixtures, where one admin creates, buys and
+    organizes, need a different approver, so it makes a shared helper admin). Each file was then read for what it MEANT: a test of "the PO
+    belongs to the organizer, not whoever finished" still confirms as an admin acting for him. 2. *Status lists that name a status
+    to include it.* Six column lists in `RequisitionDetail` (handled by, from stock, the three prices, bought) would have emptied during
+    the review; the stale-cost watch list, the stock Store Out backfill and the edit-approval classification tests (they fail until a
+    new status is classified) needed the two statuses. Grep every list that names `items_bought` before adding a status after it. 3. *A
+    helper that acted as an admin for every user.* My first test helpers called the mutations with `role: 'system_admin'` for "stranger"
+    and "buyer" too, so the refusals never happened and the tests failed for the wrong reason; call the mutation with the user's own
+    role and keep an admin context only for the setup that needs one. 4. *Mutation survivors named weak tests*: a test that edited a
+    purchase and then sent back the very purchase it had edited (so the "markers are cleared" check had nothing to check), a flag with no
+    status assertion, and only Confirm (not Submit) being held while a row is open. 5. *A sticky bar pins only when it is the last thing
+    in the page*, but the review's table belongs near the top: the panel draws its bar through a portal into a slot at the end of the
+    page. 6. *The worktree shares `dist` with the main checkout*: `packages/workflow` in the worktree is a junction into the main
+    checkout's, so building it there overwrote the main checkout's `dist` (and the gateway tests in the worktree load the main
+    checkout's copy). The main checkout's `packages/workflow/dist` must be rebuilt from its own source after the work (done by the end of
+    this session, see the memory note), or its dev gateway would run the old source against the new state machine. 7. The shared
+    `Input` has no accessible-name prop and the shared `Textarea` does not tie its label to the box: use `LinePriceInput` (it has
+    one) for numbers and find a lone textarea by role. 8. A test of "the page opens the right place" that skips rows which are not
+    links proves nothing: click the row and read the router's location.
+    Not done, by the user's choice or out of scope: the progress bar still shows one "Buy" phase for items bought, the review, the approval
+    and sourcing; there is no reminder when an organizer leaves a review waiting (median 31 hours at Items Bought today, so expect it to
+    be noticed); the 22 requisitions in Items Bought when this was built simply pass through the review when they finish; the Items
+    Bought page keeps its "no longer at Items Bought, read-only" notice for the two review statuses; nothing was looked at in a
+    browser. Tests: `services/gateway/tests/requisition-organizer-review.test.ts` (real Postgres through the real mutations and the real
+    schema, 39 tests; 24 mutations killed, two survived first), `review-helpers.ts`, the updated older files above, the worker's
+    `req-notification-handlers.test.ts`, web `OrganizerReviewPanel.test.tsx` (36), `RequisitionDetailReview.test.tsx` (14),
+    `MyQueuePageReview.test.tsx` (5); 34 web mutations killed (one survived first). Related to #24 (a gate and the list that mirrors it),
+    #33 (a status list), #59 and #60 (the automatic step it follows and the feature it replaced), #21, #44 and #112.
