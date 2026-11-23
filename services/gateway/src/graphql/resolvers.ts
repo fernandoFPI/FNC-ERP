@@ -62,6 +62,7 @@ import {
   describeReviewEdit,
   isReviewStatus,
   nextReviewOriginals,
+  settleLineQuantity,
   reviewApprovalReason,
   reviewNeedsApproval,
   type ReviewCounts,
@@ -2831,27 +2832,131 @@ async function reviewCountsGW(
   organizerId: string | null,
   client?: PoolClient,
 ): Promise<ReviewCounts> {
-  const sql = `SELECT COUNT(*) FILTER (WHERE plp.review_original_qty IS NOT NULL OR plp.review_original_price IS NOT NULL) AS edited,
+  const sql = `SELECT COUNT(*) FILTER (WHERE plp.review_original_qty IS NOT NULL OR plp.review_original_price IS NOT NULL OR plp.review_original_currency IS NOT NULL) AS edited,
                       COUNT(*) FILTER (WHERE $2::uuid IS NOT NULL AND plp.bought_by = $2::uuid) AS organizer_bought,
-                      COUNT(*) FILTER (WHERE plp.over_tolerance AND plp.tolerance_approved_by IS NULL) AS unsigned_tolerance
+                      COUNT(*) FILTER (WHERE plp.over_tolerance AND plp.tolerance_approved_by IS NULL) AS unsigned_tolerance,
+                      (SELECT COUNT(*) FROM po_lines al WHERE al.requisition_id = $1 AND al.review_added_at IS NOT NULL) AS added,
+                      (SELECT COUNT(*) FROM requisition_review_removed_lines rl WHERE rl.requisition_id = $1) AS removed,
+                      (SELECT COUNT(*) FROM po_lines sl2 WHERE sl2.requisition_id = $1 AND sl2.review_stock_qty IS NOT NULL) AS stocked
                  FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
                 WHERE pl.requisition_id = $1`
   const params = [reqId, organizerId]
+  type CountsRow = {
+    edited: string
+    organizer_bought: string
+    unsigned_tolerance: string
+    added: string
+    removed: string
+    stocked: string
+  }
   const res = client
-    ? await client.query<{ edited: string; organizer_bought: string; unsigned_tolerance: string }>(
-        sql,
-        params,
-      )
-    : await query<{ edited: string; organizer_bought: string; unsigned_tolerance: string }>(
-        sql,
-        params,
-      )
+    ? await client.query<CountsRow>(sql, params)
+    : await query<CountsRow>(sql, params)
   const row = res.rows.at(0)
   return {
     edited: parseInt(row?.edited ?? '0', 10),
     organizerBought: parseInt(row?.organizer_bought ?? '0', 10),
     unsignedTolerance: parseInt(row?.unsigned_tolerance ?? '0', 10),
+    added: parseInt(row?.added ?? '0', 10),
+    removed: parseInt(row?.removed ?? '0', 10),
+    stocked: parseInt(row?.stocked ?? '0', 10),
   }
+}
+
+// The receipt of one purchase: an attachment row on the purchase, the link back from the purchase to it, and the file marked
+// attached. One purchase carries one receipt (a split line's purchases each carry their own). Shared by recordLinePurchase
+// and addReviewLine so the two cannot drift.
+async function attachPurchaseReceiptGW(
+  client: PoolClient,
+  purchaseId: string,
+  receiptFileId: string,
+  userId: string,
+): Promise<void> {
+  const attach = await client.query<{ id: string }>(
+    `INSERT INTO document_attachments (entity_type, entity_id, file_id, uploaded_by)
+     VALUES ('po_line_purchase',$1,$2,$3) RETURNING id`,
+    [purchaseId, receiptFileId, userId],
+  )
+  const attachmentId = requireId(attach.rows.at(0)?.id, 'The receipt could not be saved')
+  await client.query(`UPDATE po_line_purchases SET receipt_attachment_id=$1 WHERE id=$2`, [
+    attachmentId,
+    purchaseId,
+  ])
+  await client.query(`UPDATE files SET status='attached' WHERE id=$1`, [receiptFileId])
+}
+
+// The snapshot of what a requisition was approved for, per currency (requisition_approved_totals), written when it is
+// approved. When the organizer adds or removes a line in the review it no longer matches the lines, so this rewrites it from
+// them: the same per-currency query approveRequisition runs, a currency with no line left is dropped.
+async function refreshApprovedTotalsGW(client: PoolClient, reqId: string): Promise<void> {
+  const totals = await client.query<{
+    currency_code: string
+    subtotal: string
+    line_count: string
+  }>(
+    `SELECT currency_code, COALESCE(SUM(total_price), 0) AS subtotal, COUNT(*) AS line_count
+       FROM po_lines WHERE requisition_id=$1 GROUP BY currency_code`,
+    [reqId],
+  )
+  await client.query(
+    `DELETE FROM requisition_approved_totals WHERE requisition_id=$1 AND NOT (currency_code = ANY($2::text[]))`,
+    [reqId, totals.rows.map((t) => t.currency_code)],
+  )
+  for (const t of totals.rows) {
+    await client.query(
+      `INSERT INTO requisition_approved_totals (requisition_id, currency_code, subtotal, line_count)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (requisition_id, currency_code) DO UPDATE SET
+         subtotal = EXCLUDED.subtotal, line_count = EXCLUDED.line_count, snapshotted_at = NOW()`,
+      [reqId, t.currency_code, t.subtotal, parseInt(t.line_count, 10)],
+    )
+  }
+}
+
+// When the purchase orders are made, a line's ORDERED quantity is settled against what was really bought (playbook #116,
+// lib/requisitionReview.ts settleLineQuantity): bought (plus stock) above the order raises the order to match; below it, the
+// shortfall is an accepted short, exactly what "marked short" means at Items Bought, and a short mark on a line that is now
+// fully bought is cleared. Returns how many lines changed. Idempotent, and it only touches lines that have purchases.
+async function settleReviewLineQuantitiesGW(client: PoolClient, reqId: string): Promise<number> {
+  const lines = await client.query<{
+    id: string
+    qty_ordered: string
+    qty_from_stock: string | null
+    short_marked_at: string | null
+    bought: string
+  }>(
+    `SELECT pl.id, pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at,
+            -- currency-safe: qty is a purchased quantity, not money
+            COALESCE((SELECT SUM(qty) FROM po_line_purchases WHERE po_line_id=pl.id),0) AS bought
+       FROM po_lines pl
+      WHERE pl.requisition_id=$1 AND pl.po_id IS NULL
+        AND EXISTS (SELECT 1 FROM po_line_purchases WHERE po_line_id=pl.id)
+      FOR UPDATE OF pl`,
+    [reqId],
+  )
+  let changed = 0
+  for (const l of lines.rows) {
+    const ordered = parseFloat(l.qty_ordered)
+    const settled = settleLineQuantity({
+      ordered,
+      fromStock: parseFloat(l.qty_from_stock ?? '0'),
+      bought: parseFloat(l.bought),
+    })
+    const orderedMoved = Math.abs(settled.ordered - ordered) > 0.00005
+    const shortWas = l.short_marked_at != null
+    if (!orderedMoved && settled.short === shortWas) continue
+    await client.query(
+      `UPDATE po_lines
+          SET qty_ordered=$2, total_price=$2*unit_price,
+              short_marked_at = CASE WHEN $3::boolean THEN COALESCE(short_marked_at, NOW()) ELSE NULL END,
+              short_marked_by = CASE WHEN $3::boolean THEN short_marked_by ELSE NULL END,
+              short_reason    = CASE WHEN $3::boolean THEN COALESCE(short_reason, 'Accepted in the organizer review') ELSE NULL END
+        WHERE id=$1`,
+      [l.id, settled.ordered, settled.short],
+    )
+    changed++
+  }
+  return changed
 }
 
 // The three checks on what was bought, shared by Finish Buying (items_bought) and the organizer review (the lines must
@@ -2860,11 +2965,15 @@ async function reviewCountsGW(
 // over-tolerance purchase is signed off by the PO Admin's approval, so it must not block the organizer from submitting.
 async function buyingGatesReason(
   reqId: string,
-  opts: { skipTolerance?: boolean } = {},
+  opts: { skipTolerance?: boolean; skipCoverage?: boolean } = {},
 ): Promise<string | null> {
   // Gate 1: every line is either fully accounted for (stock + bought
   // covers qty_ordered) or explicitly marked short.
-  const unresolved = await query<{ c: string }>(
+  // In the organizer review a quantity above or below the order is a change a PO Admin approves (the fork settles the
+  // line, settleLineQuantity), so the coverage gate applies only before it (playbook #116).
+  const unresolved = opts.skipCoverage
+    ? { rows: [{ c: '0' }] }
+    : await query<{ c: string }>(
     `SELECT COUNT(*) AS c FROM po_lines pl
        WHERE pl.requisition_id=$1 AND pl.po_id IS NULL AND pl.short_marked_at IS NULL
          AND pl.qty_ordered - COALESCE(pl.qty_from_stock,0)
@@ -2966,6 +3075,14 @@ async function forkChildPurchaseOrders(
     if (locked.rows[0]?.status !== fromStatus)
       throw new Error(`Requisition must be in ${fromStatus} status to create its purchase orders`)
     if (opts.beforeFork) await opts.beforeFork(client)
+    // An item added or removed in the review changes what the requisition was approved for, so the approved-totals
+    // snapshot that reports read is brought in step with the lines (per currency), in the same transaction as the POs.
+    // A quantity the organizer changed above or below what a line was ordered for is settled first (the ordered quantity
+    // follows the purchases, a shortfall becomes an accepted short), so the snapshot and the fork both read the final lines.
+    const settledQty = await settleReviewLineQuantitiesGW(client, reqId)
+    const reviewChanges = await reviewCountsGW(reqId, req.organizer_id, client)
+    if (reviewChanges.added > 0 || reviewChanges.removed > 0 || settledQty > 0)
+      await refreshApprovedTotalsGW(client, reqId)
 
     const linesRes = await client.query<{
       id: string
@@ -3134,6 +3251,18 @@ async function forkChildPurchaseOrders(
     // purchasesRes empty: every line that needed purchasing ended up
     // fully covered by stock and/or marked short with nothing ever
     // bought — nothing to fork, just advance the requisition.
+
+    // Stock the organizer took in the review gets its draft Store Out only now, with the purchase orders, so nobody can
+    // issue it to the project before the PO Admin has approved it (idempotent: only the part no Store Out covers yet).
+    if (reviewChanges.stocked > 0) {
+      const full = await client.query(`SELECT * FROM requisitions WHERE id=$1`, [reqId])
+      await coverRequisitionStockLines(
+        client,
+        full.rows[0] as Record<string, unknown>,
+        auth.companyId,
+        auth.userId,
+      )
+    }
 
     await reqTransition(
       client,
@@ -12162,6 +12291,8 @@ export const resolvers = {
                   pol.is_bought, pol.owner_handles,
                   pol.approved_unit_price, pol.short_reason, pol.short_marked_by, pol.short_marked_at, pol.origin_line_id,
                   pol.closed_at, pol.closed_reason, pol.closed_by,
+                  -- organizer review (migration 330): set on a line the organizer added in the review
+                  pol.review_added_at, pol.review_stock_qty,
                   pol.flag_reason, pol.flagged_at, pol.flagged_from_status, pol.flag_addressed_at, pol.flag_resolved_at,
                   COALESCE(NULLIF(TRIM(fbu.first_name || ' ' || fbu.last_name), ''), fbu.email) AS flagged_by_name,
                   COALESCE(NULLIF(TRIM(fru.first_name || ' ' || fru.last_name), ''), fru.email) AS flag_resolved_by_name,
@@ -12182,7 +12313,8 @@ export const resolvers = {
                      'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by,
                      'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email),
                      -- organizer review (migration 329): what the purchase held before the organizer changed it (null = not changed)
-                     'review_original_qty', plp.review_original_qty, 'review_original_price', plp.review_original_price
+                     'review_original_qty', plp.review_original_qty, 'review_original_price', plp.review_original_price,
+                     'review_original_currency', plp.review_original_currency
                    ) ORDER BY plp.bought_at), '[]')
                    FROM po_line_purchases plp
                    LEFT JOIN vendors v ON v.id=plp.vendor_id
@@ -12294,17 +12426,59 @@ export const resolvers = {
       const reqStatus = req.rows[0].status as string
       if (isReviewStatus(reqStatus)) {
         const counts = await reviewCountsGW(args.id, requisitionOrganizerId)
-        const [reviewTotals, lastDecision] = await Promise.all([
+        const [reviewTotals, removedLines, lastDecision] = await Promise.all([
           query<{ currency_code: string; was: string; now: string; purchases: string }>(
-            `-- currency-safe: grouped by the purchase's own currency, never added across currencies
-             SELECT plp.currency_code,
-                    COALESCE(SUM(COALESCE(plp.review_original_qty, plp.qty) * COALESCE(plp.review_original_price, plp.actual_unit_price)), 0) AS was,
-                    COALESCE(SUM(plp.qty * plp.actual_unit_price), 0) AS now,
-                    COUNT(*) AS purchases
-               FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
-              WHERE pl.requisition_id = $1
-              GROUP BY plp.currency_code ORDER BY plp.currency_code`,
+            `-- currency-safe: grouped by the purchase's own currency, never added across currencies.
+             -- "was" is what was bought when the review began: a purchase on a line ADDED in the review was not part of it
+             -- (0), and the purchases of a line REMOVED in the review were (they are read back from the snapshot kept at removal).
+             SELECT x.cur AS currency_code, COALESCE(SUM(x.was), 0) AS was, COALESCE(SUM(x.now), 0) AS now,
+                    COALESCE(SUM(x.purchases), 0) AS purchases
+               FROM (
+                 SELECT COALESCE(plp.review_original_currency, plp.currency_code) AS cur,
+                        CASE WHEN pl.review_added_at IS NOT NULL THEN 0
+                             ELSE COALESCE(plp.review_original_qty, plp.qty) * COALESCE(plp.review_original_price, plp.actual_unit_price) END AS was,
+                        0 AS now,
+                        0 AS purchases
+                   FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
+                  WHERE pl.requisition_id = $1
+                 UNION ALL
+                 -- what is bought now, in the purchase's CURRENT currency (the organizer may have changed it)
+                 SELECT plp.currency_code AS cur, 0 AS was, plp.qty * plp.actual_unit_price AS now, 1 AS purchases
+                   FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
+                  WHERE pl.requisition_id = $1
+                 UNION ALL
+                 SELECT rp->>'currency' AS cur,
+                        (rp->>'qty')::numeric * (rp->>'price')::numeric AS was,
+                        0 AS now,
+                        0 AS purchases
+                   FROM requisition_review_removed_lines rl, jsonb_array_elements(rl.purchases) rp
+                  WHERE rl.requisition_id = $1
+               ) x
+              GROUP BY x.cur ORDER BY x.cur`,
             [args.id],
+          ),
+          // The lines the organizer removed in this review, as they were when he removed them (migration 330).
+          query<{
+            id: string
+            line_number: number | null
+            description: string
+            qty_ordered: string
+            qty_from_stock: string
+            uom: string | null
+            currency_code: string | null
+            unit_price: string | null
+            purchases: unknown
+            reason: string
+            removed_by_name: string | null
+            removed_at: string
+          }>(
+            `SELECT rl.id, rl.line_number, rl.description, rl.qty_ordered, rl.qty_from_stock, rl.uom, rl.currency_code,
+                    rl.unit_price, rl.purchases, rl.reason, rl.removed_at,
+                    COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS removed_by_name
+               FROM requisition_review_removed_lines rl LEFT JOIN users u ON u.id = rl.removed_by
+              WHERE rl.requisition_id = $1 AND rl.company_id = $2
+              ORDER BY rl.removed_at, rl.id`,
+            [args.id, ctx.auth.companyId],
           ),
           query<{
             action: string
@@ -12329,6 +12503,10 @@ export const resolvers = {
           edited_count: counts.edited,
           organizer_bought_count: counts.organizerBought,
           unsigned_tolerance_count: counts.unsignedTolerance,
+          added_count: counts.added,
+          stocked_count: counts.stocked,
+          removed_count: counts.removed,
+          removed_lines: removedLines.rows,
           caller_can_edit:
             reqStatus === 'organizer_review' &&
             canActOnReview({
@@ -37384,16 +37562,7 @@ const phase5MutationResolvers = {
       // single-vendor model — not enforced here, since a photo may
       // legitimately arrive after the purchase is recorded.
       if (receiptFileId) {
-        const attach = await client.query<{ id: string }>(
-          `INSERT INTO document_attachments (entity_type, entity_id, file_id, uploaded_by)
-           VALUES ('po_line_purchase',$1,$2,$3) RETURNING id`,
-          [purchaseId, receiptFileId, auth.userId],
-        )
-        await client.query(`UPDATE po_line_purchases SET receipt_attachment_id=$1 WHERE id=$2`, [
-          attach.rows[0].id,
-          purchaseId,
-        ])
-        await client.query(`UPDATE files SET status='attached' WHERE id=$1`, [receiptFileId])
+        await attachPurchaseReceiptGW(client, purchaseId, receiptFileId, auth.userId)
       }
       await client.query('COMMIT')
     } catch (e) {
@@ -37820,13 +37989,21 @@ const phase5MutationResolvers = {
   // again against the approved price, and the edit goes to the requisition's Log.
   editReviewPurchase: async (
     _: unknown,
-    args: { purchaseId: string; qty?: number | null; actualUnitPrice?: number | null },
+    args: {
+      purchaseId: string
+      qty?: number | null
+      actualUnitPrice?: number | null
+      currencyCode?: string | null
+    },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    if (args.qty == null && args.actualUnitPrice == null)
-      throw new Error('Give a new quantity or a new price')
+    const newCurrency = args.currencyCode?.trim().toUpperCase() || null
+    if (args.qty == null && args.actualUnitPrice == null && newCurrency == null)
+      throw new Error('Give a new quantity, a new price or a new currency')
+    if (newCurrency != null && !/^[A-Z]{3}$/.test(newCurrency))
+      throw new Error('currencyCode must be a three-letter currency code')
     if (args.qty != null && !(args.qty > 0)) throw new Error('qty must be greater than 0')
     if (args.actualUnitPrice != null && !(args.actualUnitPrice > 0))
       throw new Error('actualUnitPrice must be greater than 0')
@@ -37876,6 +38053,7 @@ const phase5MutationResolvers = {
         currency_code: string
         review_original_qty: string | null
         review_original_price: string | null
+        review_original_currency: string | null
         over_tolerance: boolean
         tolerance_approved_by: string | null
         qty_ordered: string
@@ -37886,7 +38064,8 @@ const phase5MutationResolvers = {
         description: string
       }>(
         `SELECT plp.id, plp.po_line_id, plp.qty, plp.actual_unit_price, plp.currency_code,
-                plp.review_original_qty, plp.review_original_price, plp.over_tolerance, plp.tolerance_approved_by,
+                plp.review_original_qty, plp.review_original_price, plp.review_original_currency,
+                plp.over_tolerance, plp.tolerance_approved_by,
                 pl.qty_ordered, pl.qty_from_stock, pl.approved_unit_price, pl.currency_code AS line_currency,
                 pl.short_marked_at, pl.description
            FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id
@@ -37895,40 +38074,36 @@ const phase5MutationResolvers = {
       )
       const p = row.rows.at(0)
       if (!p) throw new Error('Purchase entry not found')
-      const current = { qty: parseFloat(p.qty), price: parseFloat(p.actual_unit_price) }
+      const current = {
+        qty: parseFloat(p.qty),
+        price: parseFloat(p.actual_unit_price),
+        currency: p.currency_code,
+      }
       const next = {
         qty: args.qty ?? current.qty,
         price: args.actualUnitPrice ?? current.price,
+        currency: newCurrency ?? current.currency,
       }
       if (
         Math.abs(next.qty - current.qty) < 0.00005 &&
-        Math.abs(next.price - current.price) < 0.00005
+        Math.abs(next.price - current.price) < 0.00005 &&
+        next.currency === current.currency
       )
         throw new Error('That is what the purchase already says: nothing to change')
 
-      // The line must not be over-bought: every purchase of the line together, plus what stock covers, stays within what
-      // was ordered. (Being under-bought is allowed while editing, since moving quantity from one vendor's purchase to
-      // another's takes two edits; confirm and submit check the line is fully covered again.)
-      const others = await client.query<{ total: string }>(
-        `-- currency-safe: qty is a purchased quantity, not money
-         SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1 AND id<>$2`,
-        [p.po_line_id, p.id],
-      )
-      const capacity = parseFloat(p.qty_ordered) - parseFloat(p.qty_from_stock ?? '0')
-      const bought = parseFloat(others.rows[0]?.total ?? '0') + next.qty
-      if (bought > capacity + 0.0001)
-        throw new Error(
-          `Cannot make it ${next.qty}: the line needs ${capacity} in all and the other purchases already cover ${capacity - (bought - next.qty)}`,
-        )
+      // A quantity above or below what the line was ordered for is allowed (playbook #116): the organizer is correcting what
+      // was really bought, and a PO Admin approves it. When the purchase orders are made, the line's ordered quantity follows
+      // the purchases (more bought raises it, less is an accepted shortfall; settleLineQuantity), so nothing is refused here.
 
       // Over tolerance is judged again exactly as when the purchase was recorded: only against the price that was approved,
-      // in the currency it was approved in, with the company's tolerance for that currency.
+      // in the currency it was approved in, with the company's tolerance for that currency. A purchase moved to a currency
+      // other than the line's cannot be compared (nothing is converted), so the PO Admin's approval is its only check.
       let overTolerance = false
-      if (p.approved_unit_price != null && p.currency_code === p.line_currency) {
+      if (p.approved_unit_price != null && next.currency === p.line_currency) {
         const approved = parseFloat(p.approved_unit_price)
         const tol = await client.query<{ tolerance_pct: string; tolerance_abs: string }>(
           `SELECT tolerance_pct, tolerance_abs FROM company_price_tolerance WHERE company_id=$1 AND currency_code=$2`,
-          [auth.companyId, p.currency_code],
+          [auth.companyId, next.currency],
         )
         if (tol.rows[0]) {
           const allowance = Math.min(
@@ -37938,8 +38113,9 @@ const phase5MutationResolvers = {
           overTolerance = next.price > approved + allowance
         }
       }
-      // A changed price is a new price: an earlier sign-off no longer applies to it.
-      const priceChanged = Math.abs(next.price - current.price) > 0.00005
+      // A changed price or currency is a new price: an earlier sign-off no longer applies to it.
+      const priceChanged =
+        Math.abs(next.price - current.price) > 0.00005 || next.currency !== current.currency
       const approvedBy = overTolerance && !priceChanged ? p.tolerance_approved_by : null
 
       const originals = nextReviewOriginals({
@@ -37947,13 +38123,14 @@ const phase5MutationResolvers = {
         originals: {
           qty: p.review_original_qty != null ? parseFloat(p.review_original_qty) : null,
           price: p.review_original_price != null ? parseFloat(p.review_original_price) : null,
+          currency: p.review_original_currency,
         },
         next,
       })
       await client.query(
         `UPDATE po_line_purchases
-            SET qty=$2, actual_unit_price=$3, over_tolerance=$4, tolerance_approved_by=$5,
-                review_original_qty=$6, review_original_price=$7,
+            SET qty=$2, actual_unit_price=$3, currency_code=$9, over_tolerance=$4, tolerance_approved_by=$5,
+                review_original_qty=$6, review_original_price=$7, review_original_currency=$10,
                 review_edited_by=CASE WHEN $6::numeric IS NULL AND $7::numeric IS NULL THEN NULL ELSE $8::uuid END,
                 review_edited_at=CASE WHEN $6::numeric IS NULL AND $7::numeric IS NULL THEN NULL ELSE NOW() END
           WHERE id=$1`,
@@ -37966,6 +38143,8 @@ const phase5MutationResolvers = {
           originals.qty,
           originals.price,
           auth.userId,
+          next.currency,
+          originals.currency,
         ],
       )
       await client.query(
@@ -37993,6 +38172,554 @@ const phase5MutationResolvers = {
     return getPOLinePurchaseForReturn(args.purchaseId)
   },
 
+  // An item that was bought and forgotten (migration 330): the organizer adds it in the review, with the purchase that was
+  // made for it. The line and its purchase are created together, skipping the inventory check and the pricing steps, so a
+  // PO Admin's approval is what signs it off (the purchase counts as the organizer's own, and the line as an addition).
+  // The approved price is set to the price paid, so the new line is not flagged over tolerance against nothing.
+  addReviewLine: async (
+    _: unknown,
+    args: {
+      input: {
+        requisitionId: string
+        description?: string | null
+        productId?: string | null
+        qty: number
+        uom?: string | null
+        vendorId: string
+        actualUnitPrice: number
+        currencyCode: string
+        receiptFileId: string
+      }
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const i = args.input
+    if (!(i.qty > 0)) throw new Error('qty must be greater than 0')
+    if (!(i.actualUnitPrice > 0)) throw new Error('actualUnitPrice must be greater than 0')
+    const currency = i.currencyCode.trim().toUpperCase()
+    if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Choose the currency of the purchase')
+    const typed = (i.description ?? '').trim()
+    if (!typed && !i.productId) throw new Error('Name the item: pick a product or type a description')
+
+    const req = await loadRequisitionInReviewGW(i.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error("Only the requisition's organizer, or an admin, can add an item in the review")
+
+    const vendor = await query<{ name: string }>(
+      `SELECT name FROM vendors WHERE id=$1 AND company_id=$2 AND is_active=true`,
+      [i.vendorId, auth.companyId],
+    )
+    const vendorName = vendor.rows.at(0)?.name
+    if (vendorName === undefined) throw new Error('Vendor not found')
+    const file = await query(
+      `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status IN ('uploaded','attached')`,
+      [i.receiptFileId, auth.companyId],
+    )
+    if (!file.rows[0]) throw new Error('Receipt file not found or not yet uploaded')
+    // The catalog item: this company's own, or the central warehouse's (the requisition form offers both).
+    let productName: string | null = null
+    if (i.productId) {
+      const product = await query<{ name: string }>(
+        `SELECT p.name FROM products p JOIN companies c ON c.id = p.company_id
+          WHERE p.id=$1 AND (p.company_id=$2 OR c.is_central_warehouse = true)`,
+        [i.productId, auth.companyId],
+      )
+      productName = product.rows.at(0)?.name ?? null
+      if (productName === null) throw new Error('Product not found')
+    }
+    const description = typed || productName || ''
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // Lock the requisition (a submit landing at the same moment either goes first or sees this line) and re-check the stage.
+      const locked = await client.query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [i.requisitionId, auth.companyId],
+      )
+      if (locked.rows.at(0)?.status !== 'organizer_review')
+        throw new Error('Items can be added only while the requisition is in Organizer Review')
+      const uom = (i.uom ?? '').trim() || 'unit'
+      const lineRes = await client.query<{ id: string }>(
+        `INSERT INTO po_lines
+           (requisition_id, line_number, description, product_id, qty_ordered, unit_price, initial_unit_price,
+            approved_unit_price, total_price, uom, requested_currency_code, currency_code, review_added_by, review_added_at)
+         VALUES ($1, (SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE requisition_id=$1),
+                 $2, $3, $4, $5, $5, $5, $4::numeric * $5::numeric, $6, $7, $7, $8, NOW())
+         RETURNING id`,
+        [
+          i.requisitionId,
+          description,
+          i.productId ?? null,
+          i.qty,
+          i.actualUnitPrice,
+          uom,
+          currency,
+          auth.userId,
+        ],
+      )
+      const lineId = requireId(lineRes.rows.at(0)?.id, 'The line could not be added')
+      const purchase = await client.query<{ id: string }>(
+        `INSERT INTO po_line_purchases (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance)
+         VALUES ($1,$2,$3,$4,$5,$6,false) RETURNING id`,
+        [lineId, i.vendorId, currency, i.qty, i.actualUnitPrice, auth.userId],
+      )
+      const purchaseId = requireId(purchase.rows.at(0)?.id, 'The purchase could not be recorded')
+      await attachPurchaseReceiptGW(client, purchaseId, i.receiptFileId, auth.userId)
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'organizer_review','organizer_review','review_line_added',$2,$3)`,
+        [
+          i.requisitionId,
+          auth.userId,
+          `Added ${description}: ${i.qty} × ${i.actualUnitPrice} ${currency} from ${vendorName}`,
+        ],
+      )
+      await client.query(`UPDATE requisitions SET updated_at=NOW() WHERE id=$1`, [i.requisitionId])
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', i.requisitionId, 'updated')
+    return getRequisitionForReturn(i.requisitionId)
+  },
+
+  // A line that should not be there (migration 330): the organizer removes it in the review, with the reason. It counts as a
+  // change a PO Admin has to approve, so what the line was (and what had been bought on it) is kept at the moment it goes.
+  // A line the organizer added in this same review is simply taken back out: it was never approved, so there is nothing to keep.
+  removeReviewLine: async (
+    _: unknown,
+    args: { requisitionId: string; lineId: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const reason = args.reason.trim()
+    if (!reason) throw new Error('reason is required')
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can remove an item in the review",
+      )
+
+    const client = await pool.connect()
+    let buyersToTell: string[] = []
+    let removedName = ''
+    try {
+      await client.query('BEGIN')
+      const locked = await client.query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [args.requisitionId, auth.companyId],
+      )
+      if (locked.rows.at(0)?.status !== 'organizer_review')
+        throw new Error('Items can be removed only while the requisition is in Organizer Review')
+
+      const lineRes = await client.query<{
+        id: string
+        line_number: number | null
+        description: string | null
+        product_id: string | null
+        qty_ordered: string
+        qty_from_stock: string | null
+        uom: string | null
+        currency_code: string | null
+        unit_price: string | null
+        po_id: string | null
+        review_added_at: string | null
+      }>(
+        `SELECT id, line_number, description, product_id, qty_ordered, qty_from_stock, uom, currency_code, unit_price,
+                po_id, review_added_at
+           FROM po_lines WHERE id=$1 AND requisition_id=$2 FOR UPDATE`,
+        [args.lineId, args.requisitionId],
+      )
+      const line = lineRes.rows.at(0)
+      if (!line) throw new Error('That line is not part of this requisition')
+      removedName = line.description?.trim() || 'the item'
+      if (line.po_id) throw new Error('This line already belongs to a purchase order')
+      const count = await client.query<{ c: string }>(
+        `SELECT COUNT(*) AS c FROM po_lines WHERE requisition_id=$1`,
+        [args.requisitionId],
+      )
+      if (parseInt(count.rows[0]?.c ?? '0', 10) <= 1)
+        throw new Error(
+          'A requisition needs at least one line: cancel the requisition instead of removing its last item',
+        )
+      // Names what really blocks it (a receipt, an invoice, a return ...) as a sentence, never a foreign-key error.
+      await assertLinesRemovable((sql, params) => client.query(sql, params), [line.id], {
+        requisitionId: args.requisitionId,
+      })
+      // Stock already issued to the project cannot be taken back from here.
+      const issued = await client.query<{ issue_number: string }>(
+        `SELECT DISTINCT h.issue_number
+           FROM project_material_issue_lines m JOIN project_material_issues h ON h.id = m.issue_id
+          WHERE m.po_line_id=$1 AND h.status NOT IN ('draft','cancelled')`,
+        [line.id],
+      )
+      if (issued.rows.length > 0)
+        throw new Error(
+          `"${removedName}" can't be removed: stock for it was already issued (Store Out ${issued.rows.map((r) => r.issue_number).join(', ')})`,
+        )
+
+      const purchases = await client.query<{
+        id: string
+        bought_by: string | null
+        snapshot: unknown
+      }>(
+        `SELECT plp.id, plp.bought_by,
+                jsonb_build_object(
+                  'vendor', v.name, 'qty', plp.qty::text, 'price', plp.actual_unit_price::text,
+                  'currency', plp.currency_code, 'had_receipt', plp.receipt_attachment_id IS NOT NULL,
+                  'bought_by', COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email)
+                ) AS snapshot
+           FROM po_line_purchases plp
+           LEFT JOIN vendors v ON v.id = plp.vendor_id
+           LEFT JOIN users u ON u.id = plp.bought_by
+          WHERE plp.po_line_id=$1 ORDER BY plp.bought_at`,
+        [line.id],
+      )
+      if (!line.review_added_at) {
+        await client.query(
+          `INSERT INTO requisition_review_removed_lines
+             (requisition_id, company_id, line_number, description, product_id, qty_ordered, qty_from_stock, uom,
+              currency_code, unit_price, purchases, reason, removed_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13)`,
+          [
+            args.requisitionId,
+            auth.companyId,
+            line.line_number,
+            line.description ?? '',
+            line.product_id,
+            line.qty_ordered,
+            line.qty_from_stock ?? '0',
+            line.uom,
+            line.currency_code,
+            line.unit_price,
+            JSON.stringify(purchases.rows.map((p) => p.snapshot)),
+            reason,
+            auth.userId,
+          ],
+        )
+      }
+
+      // Stock: what the line reserved goes back, and its draft Store Out lines go (a draft left pointing at a deleted line, with
+      // its reservation released, would fail to confirm with "Reservation mismatch", playbook #44). A Store Out left with no
+      // line is cancelled, not deleted, so its number stays in the history.
+      await releaseLineStockReservations(client, [line.id])
+      const draftLines = await client.query<{ issue_id: string }>(
+        `DELETE FROM project_material_issue_lines m USING project_material_issues h
+          WHERE h.id = m.issue_id AND m.po_line_id=$1 AND h.status='draft'
+          RETURNING m.issue_id`,
+        [line.id],
+      )
+      const touchedIssues = [...new Set(draftLines.rows.map((r) => r.issue_id))]
+      if (touchedIssues.length > 0)
+        await client.query(
+          `UPDATE project_material_issues h SET status='cancelled'
+            WHERE h.id = ANY($1::uuid[]) AND h.status='draft'
+              AND NOT EXISTS (SELECT 1 FROM project_material_issue_lines m WHERE m.issue_id = h.id)`,
+          [touchedIssues],
+        )
+      await detachDeadLineHistory(client, [line.id])
+
+      // The purchases go first: po_line_purchases.receipt_attachment_id references document_attachments, so deleting the
+      // still-referenced receipt first trips the foreign key (playbook #21).
+      const purchaseIds = purchases.rows.map((p) => p.id)
+      await client.query(`DELETE FROM po_line_purchases WHERE po_line_id=$1`, [line.id])
+      if (purchaseIds.length > 0)
+        await client.query(
+          `DELETE FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id = ANY($1::uuid[])`,
+          [purchaseIds],
+        )
+      await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [
+        line.id,
+        args.requisitionId,
+      ])
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'organizer_review','organizer_review','review_line_removed',$2,$3)`,
+        [
+          args.requisitionId,
+          auth.userId,
+          `Removed ${removedName}${line.review_added_at ? ' (added in this review)' : ''}: ${reason}`,
+        ],
+      )
+      await client.query(`UPDATE requisitions SET updated_at=NOW() WHERE id=$1`, [
+        args.requisitionId,
+      ])
+      buyersToTell = [
+        ...new Set(purchases.rows.flatMap((p) => (p.bought_by ? [p.bought_by] : []))),
+      ].filter((id) => id !== auth.userId)
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    for (const buyerId of buyersToTell) {
+      try {
+        await notifyUserForRequisitionGW(buyerId, args.requisitionId, {
+          type: 'REQ_REVIEW_LINE_REMOVED',
+          title: 'An item you bought was removed in the review',
+          body: `${req.requisition_number}: ${removedName} was removed. ${reason}`,
+        })
+      } catch (err) {
+        console.error('[review] could not tell the buyer a line was removed', args.requisitionId, err)
+      }
+    }
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // Taking part of a line from stock (migration 332): the organizer lowered a purchase (or the line never had one for all of
+  // its quantity) and the missing quantity is on the shelf. It reserves that stock now, exactly as an Items Bought "resolve
+  // from stock" does, and marks the quantity on the line so it counts as a change a PO Admin approves. The draft Store Out is
+  // NOT made here: it is made when the purchase orders are, so nobody can issue stock to the project before the PO Admin has
+  // approved it (forkChildPurchaseOrders). "Put back" undoes exactly this part.
+  takeReviewLineFromStock: async (
+    _: unknown,
+    args: { requisitionId: string; lineId: string; sourceLocationId: string; qty: number },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const qty = Number(args.qty) || 0
+    if (!(qty > 0)) throw new Error('qty must be greater than 0')
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can take an item from stock in the review",
+      )
+
+    // The source location must be this company's, the central warehouse's, or a company the caller has a role in (the same
+    // rule as the inventory check and resolve-from-stock), and a real place: not one of the two virtual locations.
+    const isSysAdmin = auth.role === 'system_admin'
+    const locCheck = await query<{ type: string }>(
+      `SELECT sl.type FROM stock_locations sl
+         JOIN companies c ON c.id = sl.company_id
+        WHERE sl.id=$1 AND sl.is_active=true
+          AND (sl.company_id=$2 OR $3 OR c.is_central_warehouse OR EXISTS (
+            SELECT 1 FROM user_company_roles ucr
+             WHERE ucr.user_id=$4 AND ucr.company_id=sl.company_id AND ucr.is_active=true))`,
+      [args.sourceLocationId, auth.companyId, isSysAdmin, auth.userId],
+    )
+    const locType = locCheck.rows.at(0)?.type
+    if (!locType) throw new Error('Source stock location not found or not accessible to you')
+    if (['virtual_in', 'virtual_out'].includes(locType))
+      throw new Error('Stock cannot be taken from a virtual location')
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const locked = await client.query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [args.requisitionId, auth.companyId],
+      )
+      if (locked.rows.at(0)?.status !== 'organizer_review')
+        throw new Error('Stock can be taken only while the requisition is in Organizer Review')
+
+      const lineRes = await client.query<{
+        description: string | null
+        product_id: string | null
+        po_id: string | null
+        qty_ordered: string
+        qty_from_stock: string | null
+        source_location_id: string | null
+        review_stock_qty: string | null
+        bought: string
+      }>(
+        `SELECT pl.description, pl.product_id, pl.po_id, pl.qty_ordered, pl.qty_from_stock, pl.source_location_id,
+                pl.review_stock_qty,
+                -- currency-safe: qty is a purchased quantity, not money
+                COALESCE((SELECT SUM(qty) FROM po_line_purchases WHERE po_line_id=pl.id),0) AS bought
+           FROM po_lines pl WHERE pl.id=$1 AND pl.requisition_id=$2 FOR UPDATE`,
+        [args.lineId, args.requisitionId],
+      )
+      const line = lineRes.rows.at(0)
+      if (!line) throw new Error('That line is not part of this requisition')
+      if (line.po_id) throw new Error('This line already belongs to a purchase order')
+      if (!line.product_id)
+        throw new Error('A custom (non-catalog) item has no stock to take from')
+      const name = line.description?.trim() || 'the item'
+      const fromStock = parseFloat(line.qty_from_stock ?? '0')
+      const shortfall = parseFloat(line.qty_ordered) - fromStock - parseFloat(line.bought)
+      if (!(shortfall > 0.0001))
+        throw new Error(
+          `"${name}" has nothing left to cover: lower the purchase first (what you do not buy becomes the quantity to take from stock)`,
+        )
+      if (qty > shortfall + 0.0001)
+        throw new Error(`Only ${shortfall} of "${name}" is left to cover, so ${qty} is too much`)
+      // A line keeps ONE source location (the Store Out is drawn from it), so more stock for a line that already draws on
+      // a shelf must come from the same one.
+      if (fromStock > 0 && line.source_location_id && line.source_location_id !== args.sourceLocationId)
+        throw new Error(
+          `"${name}" already draws ${fromStock} from another location: take the rest from the same one`,
+        )
+
+      const bal = await client.query<{ qty_on_hand: string; qty_reserved: string }>(
+        `SELECT qty_on_hand, qty_reserved FROM stock_balances
+          WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
+        [line.product_id, args.sourceLocationId],
+      )
+      const onHand = parseFloat(bal.rows.at(0)?.qty_on_hand ?? '0')
+      const reserved = parseFloat(bal.rows.at(0)?.qty_reserved ?? '0')
+      if (onHand - reserved < qty)
+        throw new Error(
+          `Insufficient available stock at the chosen location: ${onHand - reserved} available (${onHand} on hand, ${reserved} already reserved), ${qty} needed`,
+        )
+      await client.query(
+        `UPDATE stock_balances SET qty_reserved = qty_reserved + $1, updated_at = NOW()
+          WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+        [qty, line.product_id, args.sourceLocationId],
+      )
+      const newFromStock = fromStock + qty
+      await client.query(
+        `UPDATE po_lines
+            SET qty_from_stock=$2::numeric, in_stock=($2::numeric>=qty_ordered), source_location_id=$3,
+                total_price = CASE WHEN $2::numeric>=qty_ordered THEN 0 ELSE total_price END,
+                review_stock_qty = COALESCE(review_stock_qty,0) + $4, review_stock_by=$5, review_stock_at=NOW()
+          WHERE id=$1`,
+        [args.lineId, newFromStock, args.sourceLocationId, qty, auth.userId],
+      )
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'organizer_review','organizer_review','review_taken_from_stock',$2,$3)`,
+        [args.requisitionId, auth.userId, `${name}: ${qty} taken from stock instead of buying it`],
+      )
+      await client.query(`UPDATE requisitions SET updated_at=NOW() WHERE id=$1`, [
+        args.requisitionId,
+      ])
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
+  // Undoes "take from stock" on a line: exactly the quantity taken in this review goes back (the reservation is released and
+  // the line is as it was), whatever the inventory check had given it stays. Refused once a Store Out already exists for the
+  // line (a Store Out is made only when the purchase orders are, but a buyer's resolve-from-stock after a send-back can make one).
+  putBackReviewStock: async (
+    _: unknown,
+    args: { requisitionId: string; lineId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    if (
+      !canActOnReview({
+        callerId: auth.userId,
+        callerIsAdmin: isAdmin,
+        organizerId: req.organizer_id,
+      })
+    )
+      throw new Error(
+        "Only the requisition's organizer, or an admin, can put an item back in the review",
+      )
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const locked = await client.query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [args.requisitionId, auth.companyId],
+      )
+      if (locked.rows.at(0)?.status !== 'organizer_review')
+        throw new Error('Stock can be put back only while the requisition is in Organizer Review')
+      const lineRes = await client.query<{
+        description: string | null
+        product_id: string | null
+        po_id: string | null
+        qty_from_stock: string | null
+        source_location_id: string | null
+        review_stock_qty: string | null
+      }>(
+        `SELECT description, product_id, po_id, qty_from_stock, source_location_id, review_stock_qty
+           FROM po_lines WHERE id=$1 AND requisition_id=$2 FOR UPDATE`,
+        [args.lineId, args.requisitionId],
+      )
+      const line = lineRes.rows.at(0)
+      if (!line) throw new Error('That line is not part of this requisition')
+      if (line.po_id) throw new Error('This line already belongs to a purchase order')
+      const taken = parseFloat(line.review_stock_qty ?? '0')
+      if (!(taken > 0)) throw new Error('Nothing was taken from stock for this line in the review')
+      const name = line.description?.trim() || 'the item'
+      const storeOut = await client.query<{ issue_number: string }>(
+        `SELECT DISTINCT h.issue_number
+           FROM project_material_issue_lines m JOIN project_material_issues h ON h.id = m.issue_id
+          WHERE m.po_line_id=$1 AND h.status <> 'cancelled'`,
+        [args.lineId],
+      )
+      if (storeOut.rows.length > 0)
+        throw new Error(
+          `"${name}" already has a Store Out (${storeOut.rows.map((r) => r.issue_number).join(', ')}): cancel it before putting the stock back`,
+        )
+      if (line.product_id && line.source_location_id)
+        await client.query(
+          `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
+            WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+          [taken, line.product_id, line.source_location_id],
+        )
+      const left = Math.max(parseFloat(line.qty_from_stock ?? '0') - taken, 0)
+      await client.query(
+        `UPDATE po_lines
+            SET qty_from_stock=$2::numeric, in_stock=false,
+                source_location_id = CASE WHEN $2::numeric > 0 THEN source_location_id ELSE NULL END,
+                total_price = qty_ordered * unit_price,
+                review_stock_qty=NULL, review_stock_by=NULL, review_stock_at=NULL
+          WHERE id=$1`,
+        [args.lineId, left],
+      )
+      await client.query(
+        `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+         VALUES ($1,'organizer_review','organizer_review','review_stock_put_back',$2,$3)`,
+        [args.requisitionId, auth.userId, `${name}: ${taken} put back (no longer taken from stock)`],
+      )
+      await client.query(`UPDATE requisitions SET updated_at=NOW() WHERE id=$1`, [
+        args.requisitionId,
+      ])
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.requisitionId, 'updated')
+    return getRequisitionForReturn(args.requisitionId)
+  },
+
   // The organizer confirms: nothing was changed and he did not record any purchase himself, so no PO Admin is needed.
   // The purchase orders are created now and the requisition moves to Sourcing.
   confirmReview: async (_: unknown, args: { requisitionId: string }, ctx: GQLContext) => {
@@ -38008,7 +38735,7 @@ const phase5MutationResolvers = {
       })
     )
       throw new Error("Only the requisition's organizer, or an admin, can confirm the review")
-    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true })
+    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true, skipCoverage: true })
     if (gates) throw new Error(gates)
     const counts = await reviewCountsGW(args.requisitionId, req.organizer_id)
     if (reviewNeedsApproval(counts))
@@ -38045,7 +38772,7 @@ const phase5MutationResolvers = {
       throw new Error(
         "Only the requisition's organizer, or an admin, can submit the review for approval",
       )
-    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true })
+    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true, skipCoverage: true })
     if (gates) throw new Error(gates)
     const counts = await reviewCountsGW(args.requisitionId, req.organizer_id)
     const why = reviewApprovalReason(counts)
@@ -38094,7 +38821,7 @@ const phase5MutationResolvers = {
       throw new Error(
         "Only a PO Admin or an admin can approve this, and never the requisition's organizer",
       )
-    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true })
+    const gates = await buyingGatesReason(args.requisitionId, { skipTolerance: true, skipCoverage: true })
     if (gates) throw new Error(gates)
     await forkChildPurchaseOrders(args.requisitionId, auth, 'review_approval', 'approve_review', {
       actorPosition: isAdmin ? 'admin' : 'po_admin',
@@ -38215,13 +38942,9 @@ const phase5MutationResolvers = {
           [id],
         )
       }
-      // A new review starts clean: what is left keeps its (edited) values, and nothing counts as changed any more.
-      await client.query(
-        `UPDATE po_line_purchases plp
-            SET review_original_qty=NULL, review_original_price=NULL, review_edited_by=NULL, review_edited_at=NULL
-           FROM po_lines pl WHERE pl.id=plp.po_line_id AND pl.requisition_id=$1`,
-        [args.requisitionId],
-      )
+      // What the organizer changed stays marked as changed (with its "was" values): the requisition comes back to the review
+      // by itself once everything is bought, and a change must not need a PO Admin's approval any less for having made the
+      // round trip (playbook #116; before, the marks were cleared here and an edit could skip the approval).
       await reqTransition(
         client,
         args.requisitionId,

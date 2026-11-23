@@ -305,12 +305,16 @@ describe('the rules in lib/requisitionReview.ts', () => {
   })
 
   it('needs a PO Admin for a change, for the organizer\'s own purchases and for a missing tolerance sign-off', () => {
-    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 0 })).toBe(false)
-    expect(reviewNeedsApproval({ edited: 1, organizerBought: 0, unsignedTolerance: 0 })).toBe(true)
-    expect(reviewNeedsApproval({ edited: 0, organizerBought: 2, unsignedTolerance: 0 })).toBe(true)
-    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 1 })).toBe(true)
-    expect(reviewApprovalReason({ edited: 0, organizerBought: 0, unsignedTolerance: 0 })).toBeNull()
-    expect(reviewApprovalReason({ edited: 2, organizerBought: 1, unsignedTolerance: 1 })).toBe(
+    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 0, added: 0, removed: 0, stocked: 0 })).toBe(false)
+    expect(reviewNeedsApproval({ edited: 1, organizerBought: 0, unsignedTolerance: 0, added: 0, removed: 0, stocked: 0 })).toBe(true)
+    expect(reviewNeedsApproval({ edited: 0, organizerBought: 2, unsignedTolerance: 0, added: 0, removed: 0, stocked: 0 })).toBe(true)
+    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 1, added: 0, removed: 0, stocked: 0 })).toBe(true)
+    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 0, added: 1, removed: 0, stocked: 0 })).toBe(true)
+    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 0, added: 0, removed: 1, stocked: 0 })).toBe(true)
+    expect(reviewNeedsApproval({ edited: 0, organizerBought: 0, unsignedTolerance: 0, added: 0, removed: 0, stocked: 1 })).toBe(true)
+    expect(reviewApprovalReason({ edited: 0, organizerBought: 0, unsignedTolerance: 0, added: 0, removed: 0, stocked: 2 })).toBe('2 items were taken from stock')
+    expect(reviewApprovalReason({ edited: 0, organizerBought: 0, unsignedTolerance: 0, added: 0, removed: 0, stocked: 0 })).toBeNull()
+    expect(reviewApprovalReason({ edited: 2, organizerBought: 1, unsignedTolerance: 1, added: 0, removed: 0, stocked: 0 })).toBe(
       '2 purchases were changed; the organizer recorded a purchase himself; 1 over-tolerance purchase needs a sign-off',
     )
   })
@@ -318,13 +322,13 @@ describe('the rules in lib/requisitionReview.ts', () => {
   it('remembers what a purchase held when the review began, and an edit back is no change', () => {
     const current = { qty: 10, price: 12.5 }
     const first = nextReviewOriginals({ current, originals: { qty: null, price: null }, next: { qty: 8, price: 12.5 } })
-    expect(first).toEqual({ qty: 10, price: 12.5 })
+    expect(first).toEqual({ qty: 10, price: 12.5, currency: null })
     // a second edit keeps the FIRST "was"
     const second = nextReviewOriginals({ current: { qty: 8, price: 12.5 }, originals: first, next: { qty: 8, price: 14 } })
-    expect(second).toEqual({ qty: 10, price: 12.5 })
+    expect(second).toEqual({ qty: 10, price: 12.5, currency: null })
     // back to the originals: unchanged
     const back = nextReviewOriginals({ current: { qty: 8, price: 14 }, originals: second, next: { qty: 10, price: 12.5 } })
-    expect(back).toEqual({ qty: null, price: null })
+    expect(back).toEqual({ qty: null, price: null, currency: null })
   })
 
   it('words an edit for the Log', () => {
@@ -414,11 +418,12 @@ describe('confirming without changes', () => {
     expect(await childPOs(b.reqId)).toHaveLength(2)
   })
 
-  it('refuses while a line is no longer fully covered', async () => {
+  it('a line bought for less than was ordered is a change for the PO Admin, not a refusal (playbook #116)', async () => {
     const b = await reachReview()
     await edit(b.purchases[0]!, 6)
-    await expect(submit(b.reqId)).rejects.toThrow(/fully bought or marked short/)
-    await expect(confirm(b.reqId)).rejects.toThrow(/fully bought or marked short/)
+    await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve/)
+    await submit(b.reqId)
+    expect(await statusOf(b.reqId)).toBe('review_approval')
   })
 })
 
@@ -481,13 +486,12 @@ describe('changing a purchase', () => {
     await expect(M.confirmReview(null, { requisitionId: created.id }, asAdmin('organizer'))).rejects.toThrow(/PO Admin must approve/)
   })
 
-  it('refuses over-buying a line, a zero or negative number, a no-op and an empty edit', async () => {
+  it('refuses a zero or negative number, a no-op and an empty edit (more than was ordered is allowed: playbook #116)', async () => {
     const b = await reachReview()
-    await expect(edit(b.purchases[0]!, 11)).rejects.toThrow(/Cannot make it 11/)
     await expect(edit(b.purchases[0]!, 0)).rejects.toThrow(/greater than 0/)
     await expect(edit(b.purchases[0]!, undefined, -1)).rejects.toThrow(/greater than 0/)
     await expect(edit(b.purchases[0]!, 10, 12.5)).rejects.toThrow(/nothing to change/)
-    await expect(M.editReviewPurchase(null, { purchaseId: b.purchases[0] }, asAdmin('organizer'))).rejects.toThrow(/new quantity or a new price/)
+    await expect(M.editReviewPurchase(null, { purchaseId: b.purchases[0] }, asAdmin('organizer'))).rejects.toThrow(/new quantity, a new price or a new currency/)
   })
 
   it('only the organizer or an admin may change it, and only in the review', async () => {
@@ -695,7 +699,7 @@ describe('the PO Admin decides', () => {
 describe('sending the requisition back to the buyers', () => {
   it('with a reason and the purchases to record again: they are removed with their receipts, the buyers are told, and it comes back by itself', async () => {
     const b = await reachReview()
-    // the edited purchase STAYS (the other one is removed): its "was" markers must be cleared for the next review
+    // the edited purchase STAYS (the other one is removed): its "was" markers stay too, a change is still a change
     await edit(b.purchases[1]!, undefined, 12.9)
     expect((await purchasesOf(b.reqId))[1]!.review_original_price).not.toBeNull()
     await expect(sendBack(b.reqId, '  ')).rejects.toThrow(/reason is required/)
@@ -704,8 +708,8 @@ describe('sending the requisition back to the buyers', () => {
     expect(await statusOf(b.reqId)).toBe('items_bought')
     const rows = await purchasesOf(b.reqId)
     expect(rows).toHaveLength(1)
-    expect(rows[0]!.review_original_price).toBeNull()
-    expect(rows[0]!.review_original_qty).toBeNull()
+    expect(Number(rows[0]!.review_original_price)).toBeCloseTo(12.5, 4)
+    expect(Number(rows[0]!.review_original_qty)).toBeCloseTo(10, 4)
     expect(Number(rows[0]!.actual_unit_price)).toBeCloseTo(12.9, 4) // the edited value itself is kept
     const attachments = await pool.query(`SELECT 1 FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`, [b.purchases[0]])
     expect(attachments.rows).toHaveLength(0)
@@ -878,5 +882,175 @@ describe('cancelling', () => {
     await submit(two.reqId)
     await M.cancelRequisition(null, { id: two.reqId }, ctxFor('admin'))
     expect(await statusOf(two.reqId)).toBe('cancelled')
+  })
+})
+
+// A quantity or currency that differs from the order is part of the review (playbook #116): nothing is refused for being
+// over or under what was ordered, the PO Admin approves it, and the purchase orders and the requisition's lines follow what
+// was really bought.
+const editCurrency = (purchaseId: string, currencyCode: string, price?: number, who: Who = 'organizer') =>
+  M.editReviewPurchase(null, { purchaseId, currencyCode, actualUnitPrice: price }, ctxFor(who))
+
+async function childLines(reqId: string) {
+  return (
+    await pool.query<{ qty_ordered: string; currency_code: string; unit_price: string }>(
+      `SELECT pl.qty_ordered, pl.currency_code, pl.unit_price
+         FROM po_lines pl JOIN purchase_orders po ON po.id = pl.po_id
+        WHERE po.requisition_id=$1 ORDER BY po.created_at, pl.line_number`,
+      [reqId],
+    )
+  ).rows
+}
+async function openLines(reqId: string) {
+  return (
+    await pool.query<{ id: string; qty_ordered: string; short_marked_at: string | null }>(
+      `SELECT id, qty_ordered, short_marked_at FROM po_lines WHERE requisition_id=$1 AND po_id IS NULL ORDER BY line_number`,
+      [reqId],
+    )
+  ).rows
+}
+
+describe('a quantity or currency that differs from the order', () => {
+  it('more than was ordered is allowed, needs the PO Admin, and the line and its purchase order follow what was bought', async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, 15)
+    expect(Number((await purchasesOf(b.reqId))[0]!.review_original_qty)).toBeCloseTo(10, 4)
+    await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve/)
+    await submit(b.reqId)
+    await approveR(b.reqId)
+    expect(await statusOf(b.reqId)).toBe('sourcing')
+    const lines = await childLines(b.reqId)
+    expect(lines.map((l) => Number(l.qty_ordered)).sort((x, y) => x - y)).toEqual([10, 15])
+    // the approved totals snapshot follows the lines: 15 + 10 units at the line price
+    const totals = await pool.query<{ currency_code: string; subtotal: string }>(
+      `SELECT currency_code, subtotal FROM requisition_approved_totals WHERE requisition_id=$1`,
+      [b.reqId],
+    )
+    expect(totals.rows).toHaveLength(1)
+    expect(Number(totals.rows[0]!.subtotal)).toBeCloseTo(25 * 12.5, 2)
+  })
+
+  it('less than was ordered is an accepted shortfall: the purchase order has what was bought, the rest stays as a short', async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, 6)
+    await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve/)
+    await submit(b.reqId)
+    await approveR(b.reqId)
+    expect(await statusOf(b.reqId)).toBe('sourcing')
+    expect((await childLines(b.reqId)).map((l) => Number(l.qty_ordered)).sort((x, y) => x - y)).toEqual([6, 10])
+    const left = await openLines(b.reqId)
+    expect(left).toHaveLength(1)
+    expect(Number(left[0]!.qty_ordered)).toBeCloseTo(4, 4)
+    expect(left[0]!.short_marked_at).not.toBeNull()
+  })
+
+  it('changing it and changing it back is no change at all: no approval, the order untouched', async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, 15)
+    await edit(b.purchases[0]!, 10)
+    const p = (await purchasesOf(b.reqId))[0]!
+    expect(p.review_original_qty).toBeNull()
+    await confirm(b.reqId)
+    expect(await statusOf(b.reqId)).toBe('sourcing')
+    expect((await childLines(b.reqId)).map((l) => Number(l.qty_ordered))).toEqual([10, 10])
+  })
+
+  it('the currency can be corrected: it needs the PO Admin, the log and the review totals say what it was, and the purchase order carries it', async () => {
+    const b = await reachReview()
+    await editCurrency(b.purchases[0]!, 'iqd', 18000)
+    const row = (
+      await pool.query<{ currency_code: string; review_original_currency: string | null; over_tolerance: boolean }>(
+        `SELECT currency_code, review_original_currency, over_tolerance FROM po_line_purchases WHERE id=$1`,
+        [b.purchases[0]],
+      )
+    ).rows[0]!
+    expect(row.currency_code).toBe('IQD')
+    expect(row.review_original_currency).toBe('USD')
+    // a purchase in a currency other than the line's cannot be compared with the approved price: only the approval checks it
+    expect(row.over_tolerance).toBe(false)
+    const note = (
+      await pool.query<{ notes: string }>(
+        `SELECT notes FROM requisition_approval_log WHERE requisition_id=$1 AND action='review_purchase_edited'`,
+        [b.reqId],
+      )
+    ).rows[0]!.notes
+    expect(note).toContain('USD')
+    expect(note).toContain('IQD')
+    const seen = (await Q.requisition(null, { id: b.reqId }, asAdmin('organizer'))) as {
+      review: { edited_count: number; totals: { currency_code: string; was: string; now: string }[] }
+    }
+    expect(seen.review.edited_count).toBe(1)
+    const by = Object.fromEntries(seen.review.totals.map((t) => [t.currency_code, t]))
+    expect(Number(by.USD!.was)).toBeCloseTo(250, 2) // both purchases were 125 USD each
+    expect(Number(by.USD!.now)).toBeCloseTo(125, 2) // one is left in USD
+    expect(Number(by.IQD!.was)).toBeCloseTo(0, 2)
+    expect(Number(by.IQD!.now)).toBeCloseTo(180000, 2)
+    await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve/)
+    await submit(b.reqId)
+    await approveR(b.reqId)
+    expect((await childLines(b.reqId)).map((l) => l.currency_code).sort()).toEqual(['IQD', 'USD'])
+  })
+
+  it('the currency back to what it was is no change', async () => {
+    const b = await reachReview()
+    await editCurrency(b.purchases[0]!, 'IQD', 18000)
+    await editCurrency(b.purchases[0]!, 'USD', 12.5)
+    const p = (await purchasesOf(b.reqId))[0]!
+    expect(p.review_original_price).toBeNull()
+    await confirm(b.reqId)
+    expect(await statusOf(b.reqId)).toBe('sourcing')
+  })
+
+  it('a currency alone is enough: the same price in another currency is a change', async () => {
+    const b = await reachReview()
+    await editCurrency(b.purchases[0]!, 'EUR')
+    const row = (
+      await pool.query<{ currency_code: string; actual_unit_price: string; review_original_currency: string | null }>(
+        `SELECT currency_code, actual_unit_price, review_original_currency FROM po_line_purchases WHERE id=$1`,
+        [b.purchases[0]],
+      )
+    ).rows[0]!
+    expect(row.currency_code).toBe('EUR')
+    expect(Number(row.actual_unit_price)).toBeCloseTo(12.5, 4)
+    expect(row.review_original_currency).toBe('USD')
+  })
+
+  it('a line a buyer had marked short that is fully bought again loses the short mark when the purchase orders are made', async () => {
+    const b = await reachReview()
+    // the state the old code could leave (short marked, then bought in full): put it there directly and say so
+    await pool.query(`UPDATE po_lines SET short_marked_at=NOW(), short_reason='test' WHERE id=$1`, [b.lines[0]])
+    await edit(b.purchases[0]!, undefined, 13)
+    await submit(b.reqId)
+    await approveR(b.reqId)
+    const marks = await pool.query<{ short_marked_at: string | null }>(
+      `SELECT short_marked_at FROM po_lines WHERE id=$1`,
+      [b.lines[0]],
+    )
+    expect(marks.rows[0]!.short_marked_at).toBeNull()
+  })
+
+  it('refuses a currency that is not three letters, and a no-op currency', async () => {
+    const b = await reachReview()
+    await expect(editCurrency(b.purchases[0]!, 'DOLLARS')).rejects.toThrow(/three-letter/)
+    await expect(editCurrency(b.purchases[0]!, 'USD')).rejects.toThrow(/nothing to change/)
+  })
+
+  it('sending the requisition back keeps what he changed marked, so coming back to the review still needs the PO Admin', async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, undefined, 13)
+    await sendBack(b.reqId, 'Check the other item again')
+    expect(await statusOf(b.reqId)).toBe('items_bought')
+    const p = (await purchasesOf(b.reqId))[0]!
+    expect(Number(p.review_original_price)).toBeCloseTo(12.5, 4)
+    expect(Number(p.actual_unit_price)).toBeCloseTo(13, 4)
+  })
+
+  it('a quantity lowered, then sent back to the buyers: the line is short until they buy the rest or mark it short', async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, 6)
+    await sendBack(b.reqId, 'Buy the rest')
+    await expect(M.finishBuyingRequisition(null, { id: b.reqId }, asAdmin('admin'))).rejects.toThrow(
+      /fully bought or marked short/,
+    )
   })
 })

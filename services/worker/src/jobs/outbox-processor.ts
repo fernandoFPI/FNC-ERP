@@ -1920,7 +1920,9 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     // The outcome notices of the organizer review (migration 329). In-app only, like the PO notices above: the organizer is
     // told a PO Admin decided, the buyers are told the requisition was sent back to Items Bought and why. Payload from the
     // gateway's notifyUserForRequisitionGW: { userId, requisitionId, type, title, body }.
+    // REQ_REVIEW_LINE_REMOVED (migration 330): the organizer removed a line the buyer had recorded a purchase on.
     case 'REQ_REVIEW_DECIDED':
+    case 'REQ_REVIEW_LINE_REMOVED':
     case 'REQ_SENT_BACK_TO_BUYING': {
       const reqRes = await pool.query<{ company_id: string; requisition_number: string }>(
         `SELECT company_id, requisition_number FROM requisitions WHERE id=$1`,
