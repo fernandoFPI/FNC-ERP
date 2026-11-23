@@ -188,15 +188,21 @@ describe('"Needs My Approval"', () => {
   it('counts expense claims, advance requests and settlements, not only requisitions and POs', async () => {
     await renderPage()
     const tile = screen.getByRole('button', { name: /needs my approval/i })
-    // submitted claim, funding decision, pending advance, advance awaiting cash, settlement
-    expect(tile).toHaveTextContent('5')
+    // submitted claim, funding decision, pending advance, settlement. The advance awaiting cash is a payment, not a sign-off.
+    expect(tile).toHaveTextContent('4')
   })
 
-  it('shows them when the tile is pressed', async () => {
+  it('shows them when the tile is pressed, and leaves out the advance waiting for cash', async () => {
     await renderPage()
     fireEvent.click(screen.getByRole('button', { name: /needs my approval/i }))
-    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'ADV-CASH', 'SET-1'])
+    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'SET-1'])
       expect(shown(n)).toBe(true)
+    expect(shown('ADV-CASH')).toBe(false)
+  })
+
+  it('still lists the advance waiting for cash when nothing is filtered', async () => {
+    await renderPage()
+    expect(shown('ADV-CASH')).toBe(true)
   })
 
   it('shows them for the old Approval Queue link too', async () => {
