@@ -3,7 +3,7 @@
 // requisition is created is the price the approver sees and, once approved, the price Items Bought judges
 // each purchase against (approveRequisition freezes unit_price into approved_unit_price).
 //
-//   draft > pending_approval > items_bought > sourcing > completed
+//   draft > pending_approval > items_bought > organizer_review (> review_approval) > sourcing > completed
 //
 // Not to be confused with the project TYPE of the same name (migration 291), a project created straight into
 // Execution. A direct supply requisition can be raised for any project.

@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 
 const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'stock-lines-completion-test@fnc-erp.local'
@@ -148,6 +149,8 @@ async function makeProjectReq(opts: {
     )
   }
   await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+  // the purchase orders are created when the organizer's review passes (migration 329)
+  await passReview(reqId, ctx)
   const child = await pool.query<{ id: string }>(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [reqId])
   return { reqId, lineId, productId, childId: child.rows[0]?.id }
 }
@@ -438,6 +441,7 @@ describe.each(['inventory', 'jobsite'] as const)(
         ctx as never,
       )
       await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+      await passReview(reqId, ctx)
       const childId = (await pool.query<{ id: string }>(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [reqId])).rows[0]!.id
       await finishChild(childId)
       expect(await statusOf(reqId)).toBe('sourcing') // the resolved 3 are still a draft

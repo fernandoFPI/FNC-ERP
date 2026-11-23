@@ -308,7 +308,8 @@ export default function MyQueuePage() {
           r.status === 'items_bought'
             ? `/procurement/requisitions/${r.id}/items-bought`
             : `/procurement/requisitions/${r.id}`,
-        needsApproval: r.status === 'pending_approval',
+        // a PO Admin's approval of the organizer's changes is an approval too
+        needsApproval: r.status === 'pending_approval' || r.status === 'review_approval',
         priority: r.priority ?? null,
       })
     }
@@ -394,8 +395,9 @@ export default function MyQueuePage() {
         // waiting since the manager approved it
         updatedAt: a.approved_at ?? a.created_at,
         href: `/finance/advances/${a.id}`,
-        // paying the cash out is the release of an approved request, so it counts with what needs my sign-off
-        needsApproval: true,
+        // The manager has already approved it; paying the cash out is a payment, not a sign-off, so it stays out of
+        // "Needs My Approval" (it is still in the queue, the overdue count and the action filter).
+        needsApproval: false,
         priority: null,
       })
     }

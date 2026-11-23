@@ -24,7 +24,15 @@ const PO_PREFIX = 'EAOTEST-PO-'
 // Every requisitions.status the database allows, and which side of the rule each is on. Declared here, apart from the library, so a status
 // added in a migration fails the "classified" test until somebody decides which side it belongs on.
 const REQ_BEFORE_APPROVAL = ['draft', 'inventory_check', 'store_pricing', 'market_pricing', 'price_verification', 'pending_approval', 'rejected', 'deleted']
-const REQ_AFTER_APPROVAL = ['approved', 'items_bought', 'sourcing', 'completed', 'cancelled']
+const REQ_AFTER_APPROVAL = [
+  'approved',
+  'items_bought',
+  'organizer_review',
+  'review_approval',
+  'sourcing',
+  'completed',
+  'cancelled',
+]
 const PO_AFTER_APPROVAL = ['approved', 'bought', 'finance_review', 'payment_pending', 'closed']
 const REFUSAL_REQ = /Only an administrator can change an approved requisition/
 const REFUSAL_PO = /Only an administrator can change an approved purchase order/

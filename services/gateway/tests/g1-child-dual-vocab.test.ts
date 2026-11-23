@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 
 const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000009'
 const TEST_USER_EMAIL = 'g1-dualvocab-test@fnc-erp.local'
@@ -93,7 +94,11 @@ async function makeReqWithOneChildAtBought(
     ctx as never,
   )
   const result = await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
-  expect((result as { status: string }).status).toBe('sourcing')
+  // buying is finished: the organizer's review comes next, and the purchase orders are created when it passes (migration 329)
+  expect((result as { status: string }).status).toBe('organizer_review')
+  await passReview(reqId, ctx)
+  const afterReview = await pool.query<{ status: string }>(`SELECT status FROM requisitions WHERE id=$1`, [reqId])
+  expect(afterReview.rows[0]!.status).toBe('sourcing')
   const child = await pool.query<{ id: string; status: string }>(
     `SELECT id, status FROM purchase_orders WHERE requisition_id=$1`,
     [reqId],

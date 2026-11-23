@@ -14,6 +14,7 @@ import { ApolloServer } from '@apollo/server'
 import { pool } from '@fnc-erp/db'
 import { typeDefs } from '../src/graphql/schema.js'
 import { resolvers } from '../src/graphql/resolvers.js'
+import { passReview } from './review-helpers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const EMAIL_PREFIX = 'req-owner-split-'
@@ -499,13 +500,17 @@ describe('buying an owner’s line', () => {
 })
 
 describe('finishing buying by itself', () => {
-  it('finishes the moment the last line is bought, whoever buys it, and forks the child POs', async () => {
+  it('finishes the moment the last line is bought, whoever buys it, goes to the organizer review, and forks the child POs once it passes', async () => {
     const r = await makeRequisition('items_bought', [{ owner: true }, {}])
     const receipt = await makeReceiptFile()
     await buy('owner', r.lines[0]!, 10, 1000, receipt)
     // Procurement's line is still to buy.
     expect(await status(r.reqId)).toBe('items_bought')
     await buy('buyer', r.lines[1]!, 10, 1000, receipt)
+    expect(await status(r.reqId)).toBe('organizer_review')
+    // Nothing is forked yet: the organizer reviews what was bought first (the owner bought a line himself, so a PO Admin approves).
+    expect((await pool.query(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [r.reqId])).rows).toHaveLength(0)
+    await passReview(r.reqId, ctxFor('owner'), ctxFor('admin2'))
     expect(await status(r.reqId)).toBe('sourcing')
     const pos = await pool.query(`SELECT status FROM purchase_orders WHERE requisition_id=$1`, [r.reqId])
     expect(pos.rows.map((p) => p.status)).toEqual(['bought'])
@@ -519,6 +524,8 @@ describe('finishing buying by itself', () => {
     const receipt = await makeReceiptFile()
     await buy('buyer', r.lines[1]!, 10, 1000, receipt)
     await buy('owner', r.lines[0]!, 10, 1000, receipt)
+    expect(await status(r.reqId)).toBe('organizer_review')
+    await passReview(r.reqId, ctxFor('owner'), ctxFor('admin2'))
     expect(await status(r.reqId)).toBe('sourcing')
     expect(await status(r.reqId)).not.toBe('completed')
   })
@@ -531,7 +538,7 @@ describe('finishing buying by itself', () => {
     expect(await status(r.reqId)).toBe('items_bought')
     const later = await makeReceiptFile()
     await resolvers.Mutation.attachFile(null, { fileId: later, entityType: 'po_line_purchase', entityId: ownerPurchase.id } as never, ctxFor('owner'))
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
   })
 
   it('waits for an over-tolerance purchase to be approved by someone else, then finishes', async () => {
@@ -541,7 +548,7 @@ describe('finishing buying by itself', () => {
     await buy('owner', r.lines[0]!, 10, 1000, receipt)
     expect(await status(r.reqId)).toBe('items_bought')
     await resolvers.Mutation.approveTolerancePurchase(null, { purchaseId: over.id } as never, ctxFor('admin2'))
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
   })
 
   it('marking the last open line short finishes it too', async () => {
@@ -549,7 +556,7 @@ describe('finishing buying by itself', () => {
     await buy('owner', r.lines[0]!, 10, 1000, await makeReceiptFile())
     expect(await status(r.reqId)).toBe('items_bought')
     await resolvers.Mutation.markRequisitionLineShort(null, { lineId: r.lines[1]!, reason: 'out of stock at the vendor' } as never, ctxFor('buyer'))
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
   })
 
   it('a partly bought line keeps it waiting', async () => {
@@ -557,7 +564,7 @@ describe('finishing buying by itself', () => {
     await buy('owner', r.lines[0]!, 4, 1000, await makeReceiptFile())
     expect(await status(r.reqId)).toBe('items_bought')
     await buy('owner', r.lines[0]!, 6, 1000, await makeReceiptFile())
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
   })
 
   it('the Finish Buying button is still there as a fallback, with its old gate', async () => {
@@ -575,11 +582,17 @@ describe('finishing buying by itself', () => {
   it('pressing Finish Buying after it happened by itself returns the requisition and forks nothing twice', async () => {
     const r = await makeRequisition('items_bought', [{ owner: true }])
     await buy('owner', r.lines[0]!, 10, 1000, await makeReceiptFile())
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
     const again = (await resolvers.Mutation.finishBuyingRequisition(null, { id: r.reqId } as never, ctxFor('buyer'))) as {
       status: string
     }
-    expect(again.status).toBe('sourcing')
+    expect(again.status).toBe('organizer_review')
+    await passReview(r.reqId, ctxFor('owner'), ctxFor('admin2'))
+    // the button is harmless on a requisition that has moved on, and the purchase orders were created once
+    const afterReview = (await resolvers.Mutation.finishBuyingRequisition(null, { id: r.reqId } as never, ctxFor('buyer'))) as {
+      status: string
+    }
+    expect(afterReview.status).toBe('sourcing')
     const pos = await pool.query(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [r.reqId])
     expect(pos.rows).toHaveLength(1)
   })
@@ -592,7 +605,7 @@ describe('finishing buying by itself', () => {
     )
   })
 
-  it('two finishes at the same moment fork one child PO, not two', async () => {
+  it('two finishes at the same moment move it to the review once, and the review forks one child PO, not two', async () => {
     const r = await makeRequisition('items_bought', [{}, {}])
     await buy('buyer', r.lines[0]!, 10, 1000, await makeReceiptFile())
     // Marked short straight in the table, so nothing has triggered the automatic finish yet: the requisition is ready
@@ -610,7 +623,10 @@ describe('finishing buying by itself', () => {
     // Whoever lost the race was turned away by the row lock (or arrived after it and got the requisition back), never by
     // a failure half way through forking.
     for (const x of results) if (x.status === 'rejected') expect(String(x.reason?.message ?? x.reason)).toMatch(/must be in items_bought status/)
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
+    // moved once, and nothing is forked until the review passes
+    expect((await pool.query(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [r.reqId])).rows).toHaveLength(0)
+    await passReview(r.reqId, ctxFor('owner'), ctxFor('admin2'))
     const pos = await pool.query(`SELECT id FROM purchase_orders WHERE requisition_id=$1`, [r.reqId])
     expect(pos.rows).toHaveLength(1)
     const onChild = await pool.query(`SELECT COUNT(*)::int AS n FROM po_lines WHERE requisition_id=$1 AND po_id IS NOT NULL`, [r.reqId])
@@ -629,14 +645,14 @@ describe('finishing buying by itself', () => {
       { lineId: r.lines[1]!, qty: 10, sourceLocationId: warehouseId } as never,
       ctxFor('buyer'),
     )
-    expect(await status(r.reqId)).toBe('sourcing')
+    expect(await status(r.reqId)).toBe('organizer_review')
   })
 
   it('a requisition not yet fully bought is left alone by a purchase on another one', async () => {
     const a = await makeRequisition('items_bought', [{ owner: true }, {}])
     const b = await makeRequisition('items_bought', [{ owner: true }])
     await buy('owner', b.lines[0]!, 10, 1000, await makeReceiptFile())
-    expect(await status(b.reqId)).toBe('sourcing')
+    expect(await status(b.reqId)).toBe('organizer_review')
     expect(await status(a.reqId)).toBe('items_bought')
   })
 })

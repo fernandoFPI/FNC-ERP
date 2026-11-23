@@ -1,4 +1,4 @@
-// The five phases on the requisition progress bar group the ten statuses; nothing may fall between them.
+// The five phases on the requisition progress bar group the twelve statuses; nothing may fall between them.
 import { describe, it, expect, afterEach } from 'vitest'
 import i18n from '../../i18n'
 import {

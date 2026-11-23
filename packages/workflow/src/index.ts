@@ -391,10 +391,23 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 //                                 on child POs" — sourcing's definition covers both: it is
 //                                 "outstanding work remains, no further human requisition-
 //                                 level action needed", not specifically "children exist")
-// items_bought → sourcing       (finish_buying — Finish Buying: groups bought entries by
-//                                 actual vendor, forks one child purchase_orders row per
-//                                 vendor, each starting at 'bought'. A line with no bought
-//                                 entry at all — e.g. fully covered from stock — never forks)
+// items_bought → organizer_review  (finish_buying — buying is finished: every purchased line is
+//                                 bought or marked short, every purchase has a receipt, every
+//                                 over-tolerance purchase is signed off. Nothing is forked yet:
+//                                 the organizer double-checks what was bought first)
+// organizer_review → sourcing   (confirm_review — the organizer confirms, no change made and he
+//                                 did not buy the items himself. NOW the bought entries are
+//                                 grouped by actual vendor and one child purchase_orders row per
+//                                 vendor is forked, each starting at 'bought'. A line with no
+//                                 bought entry at all — e.g. fully covered from stock — never forks)
+// organizer_review → review_approval  (submit_review — the organizer changed a purchase's
+//                                 quantity or price, or bought the items himself: a PO Admin
+//                                 must approve before any PO is created)
+// review_approval → sourcing    (approve_review — a PO Admin (never the organizer) approves; the
+//                                 child POs are forked exactly as in confirm_review)
+// review_approval → organizer_review  (reject_review — back to the organizer with a reason)
+// organizer_review → items_bought  (send_back_to_buying — the organizer returns the requisition
+//                                 to the buyers, optionally removing purchases to be recorded again)
 // sourcing → completed          (system-driven, via the completion evaluator — not a direct
 //                                 user action. Fires once every line is resolved: issued from
 //                                 stock, on a child that reached 'closed', or explicitly
@@ -418,6 +431,8 @@ export type RequisitionStatus =
   | 'pending_approval'
   | 'approved'
   | 'items_bought'
+  | 'organizer_review'
+  | 'review_approval'
   | 'sourcing'
   | 'completed'
   | 'rejected'
@@ -441,6 +456,11 @@ export type RequisitionAction =
   | 'start_buying'
   | 'skip_buying'
   | 'finish_buying'
+  | 'confirm_review'
+  | 'submit_review'
+  | 'approve_review'
+  | 'reject_review'
+  | 'send_back_to_buying'
   | 'complete'
   | 'cancel'
   | 'delete'
@@ -454,6 +474,8 @@ const REQUISITION_CANCELLABLE: RequisitionStatus[] = [
   'pending_approval',
   'approved',
   'items_bought',
+  'organizer_review',
+  'review_approval',
   'sourcing',
 ]
 
@@ -500,7 +522,13 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
 
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'approved', to: 'sourcing', action: 'skip_buying' },
-    { from: 'items_bought', to: 'sourcing', action: 'finish_buying' },
+    // Buying is finished: the organizer reviews before any purchase order exists (see the header comment).
+    { from: 'items_bought', to: 'organizer_review', action: 'finish_buying' },
+    { from: 'organizer_review', to: 'sourcing', action: 'confirm_review' },
+    { from: 'organizer_review', to: 'review_approval', action: 'submit_review' },
+    { from: 'review_approval', to: 'sourcing', action: 'approve_review' },
+    { from: 'review_approval', to: 'organizer_review', action: 'reject_review' },
+    { from: 'organizer_review', to: 'items_bought', action: 'send_back_to_buying' },
     { from: 'sourcing', to: 'completed', action: 'complete' },
 
     ...REQUISITION_CANCELLABLE.map((s) => ({

@@ -15,13 +15,16 @@ export const REQUISITION_STATUSES = [
   { key: 'pending_approval', label: 'Pending approval', sequence: 5 },
   { key: 'approved', label: 'Approved', sequence: 6 },
   { key: 'items_bought', label: 'Items bought', sequence: 7 },
-  { key: 'sourcing', label: 'Sourcing', sequence: 8 },
-  { key: 'completed', label: 'Completed', sequence: 9 },
+  // The organizer double-checks what was bought before any purchase order exists (migration 329); a change needs a PO Admin.
+  { key: 'organizer_review', label: 'Organizer review', sequence: 8 },
+  { key: 'review_approval', label: 'PO Admin approval', sequence: 9 },
+  { key: 'sourcing', label: 'Sourcing', sequence: 10 },
+  { key: 'completed', label: 'Completed', sequence: 11 },
 ] as const
 
 export const REQUISITION_TERMINAL_STATUSES = ['completed', 'rejected', 'cancelled', 'deleted'] as const
 
-// The ten statuses above grouped into the five phases the progress bar on the requisition page
+// The twelve statuses above grouped into the five phases the progress bar on the requisition page
 // shows. The status names themselves (and their labels) are unchanged: a phase only says which
 // stretch of the process a status belongs to. Every status sits in exactly one phase, in order;
 // requisitionPhases.test.ts fails when a status is added to the list above and not placed here.
@@ -29,7 +32,10 @@ export const REQUISITION_PHASES = [
   { key: 'prepare', statuses: ['draft', 'inventory_check'] },
   { key: 'price', statuses: ['store_pricing', 'market_pricing', 'price_verification'] },
   { key: 'approve', statuses: ['pending_approval'] },
-  { key: 'buy', statuses: ['approved', 'items_bought', 'sourcing'] },
+  {
+    key: 'buy',
+    statuses: ['approved', 'items_bought', 'organizer_review', 'review_approval', 'sourcing'],
+  },
   { key: 'done', statuses: ['completed'] },
 ] as const
 
@@ -77,7 +83,13 @@ const REQUISITION_LOG_ACTION_LABELS: Record<string, string> = {
   reject: 'Rejected',
   start_buying: 'Started buying',
   skip_buying: 'Skipped buying',
-  finish_buying: 'Finished buying, purchase orders created',
+  finish_buying: 'Finished buying, sent to the organizer review',
+  confirm_review: 'Confirmed the review, purchase orders created',
+  submit_review: 'Sent the changes for PO Admin approval',
+  approve_review: 'Approved the changes, purchase orders created',
+  reject_review: 'Sent the changes back to the organizer',
+  send_back_to_buying: 'Sent back to Items Bought',
+  review_purchase_edited: 'Changed a purchase',
   complete: 'Completed',
   cancel: 'Cancelled',
   delete: 'Deleted',
@@ -98,9 +110,16 @@ export type RequisitionLogTone = 'success' | 'danger' | 'info'
 // translated sentence, which differs by language).
 export function getRequisitionLogActionTone(action: string): RequisitionLogTone {
   if (
-    ['approve', 'approved', 'complete', 'finish_buying', 'edit_approved', 'edit_applied'].includes(
-      action,
-    )
+    [
+      'approve',
+      'approved',
+      'complete',
+      'finish_buying',
+      'confirm_review',
+      'approve_review',
+      'edit_approved',
+      'edit_applied',
+    ].includes(action)
   )
     return 'success'
   if (action.startsWith('reject') || ['cancel', 'delete', 'edit_rejected'].includes(action))
@@ -118,9 +137,11 @@ export function getRequisitionStatusVariant(status: string): BadgeVariant {
       return 'info'
     case 'price_verification':
     case 'pending_approval':
+    case 'review_approval':
       return 'warning'
     case 'approved':
     case 'items_bought':
+    case 'organizer_review':
       return 'accent'
     case 'sourcing':
       return 'accent'
@@ -214,5 +235,18 @@ export const REQUISITION_STATUS_ACTIONS: Record<
     label: 'Record purchases',
     description: 'The assigned buyer records each purchase, per vendor, with its receipt',
     requiredPosition: 'buyer',
+  },
+  // The organizer review (migration 329): the organizer double-checks what was bought, and a PO Admin approves what he changed.
+  organizer_review: {
+    label: 'Review what was bought',
+    description:
+      'The organizer checks the purchases and receipts, then confirms or asks a PO Admin to approve his changes',
+    isOrganizer: true,
+  },
+  review_approval: {
+    label: 'Approve the changes',
+    description:
+      'A PO Admin approves what the organizer changed before the purchase orders are created',
+    requiredPosition: 'po_admin',
   },
 }

@@ -61,9 +61,6 @@
     purchaseOrderForAction(id: ID!): PurchaseOrder
     myPOQueue: [PurchaseOrder!]
     poPositions(projectId: ID, departmentId: ID, branchId: ID): [POPositionAssignment!]!
-    # Whether this user's purchases need the requisition organizer's approval (migration 316). Same admins as PO positions.
-    # companyId defaults to the caller's own company; another company needs system_admin.
-    userPurchaseReview(userId: ID!, companyId: ID): Boolean!
     poFxRates: POFxRatesResult!
     poReceipts: [POReceipt!]!
     poReceipt(id: ID!): POReceipt
@@ -237,12 +234,19 @@
     # the recorded purchase entirely (and its receipts) instead of signing
     # off on the price, so the buyer records it again with a corrected one.
     rejectTolerancePurchase(purchaseId: ID!, reason: String!): Boolean!
-    # The organizer's sign-off (or an admin's) on every purchase of this requisition that is waiting for it and that the
-    # caller may approve, never one he recorded himself. When the last one lands the requisition finishes buying by itself.
-    approveItemsBought(requisitionId: ID!): Requisition!
-    # The other option: removes one purchase that is waiting for the organizer's approval, with a reason, so the buyer
-    # records it again; the buyer is notified.
-    sendBackPurchase(purchaseId: ID!, reason: String!): Boolean!
+
+    # The organizer review (migration 329): after Items Bought and before any purchase order exists, the organizer
+    # double-checks what was bought. editReviewPurchase changes one purchase's quantity and/or price (organizer or an admin,
+    # only in organizer_review). confirmReview creates the purchase orders when nothing was changed and the organizer did not
+    # record any purchase himself; otherwise submitReviewForApproval asks a PO Admin, who approveReview's (creating the
+    # purchase orders) or rejectReview's (back to the organizer, with a reason). sendBackToBuying returns the requisition
+    # to the buyers, optionally removing purchases so they are recorded again.
+    editReviewPurchase(purchaseId: ID!, qty: Float, actualUnitPrice: Float): POLinePurchase!
+    confirmReview(requisitionId: ID!): Requisition!
+    submitReviewForApproval(requisitionId: ID!, notes: String): Requisition!
+    approveReview(requisitionId: ID!): Requisition!
+    rejectReview(requisitionId: ID!, reason: String!): Requisition!
+    sendBackToBuying(requisitionId: ID!, reason: String!, purchaseIds: [ID!]): Requisition!
 
     markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
     # Stock arrived (anywhere in the group, including the central warehouse)
@@ -321,9 +325,6 @@
     # PO position management
     assignPOPosition(input: POPositionInput!): POPositionAssignment!
     removePOPosition(id: ID!): Boolean!
-    # Mark (or un-mark) a user whose purchases at Items Bought must be approved by the requisition's organizer before the
-    # requisition continues. Works for a procurement position holder and a normal user alike; same admins as PO positions.
-    setUserPurchaseReview(userId: ID!, required: Boolean!, companyId: ID): Boolean!
 
 
     # Manufacturing Requests
@@ -2654,16 +2655,10 @@
     over_tolerance: Boolean!
     tolerance_approved_by: ID
     tolerance_approved_by_name: String
-    # An extra layer of approval (migration 316): true when the buyer was marked, at the time of the purchase, as someone
-    # whose purchases the requisition's organizer must approve. organizer_approved_by is the organizer, or an admin
-    # acting for him; it is never the buyer.
-    needs_organizer_approval: Boolean
-    organizer_approved_by: ID
-    organizer_approved_by_name: String
-    organizer_approved_at: String
-    # Whether THE CALLER may approve or send back this purchase right now. Decided on the server by the one rule the
-    # mutations use, so the page keeps no copy of it. Only filled by requisition(id).
-    caller_can_approve: Boolean
+    # Organizer review (migration 329): what the purchase held before the organizer changed it in this review; null when
+    # it was not changed. Strings, like every exact decimal here.
+    review_original_qty: String
+    review_original_price: String
   }
 
   input RecordLinePurchaseInput {
@@ -2978,6 +2973,39 @@
     # po_admin position) — gates the pending_approval panel, and (screen 3)
     # the over-tolerance override.
     callerCanApprove: Boolean
+    # The organizer review (migration 329). Only filled by requisition(id), and only while the requisition is in
+    # organizer_review or review_approval; null otherwise. Nullable on purpose: the other mutations that return a
+    # requisition do not fill it, and a non-null field would null the whole requisition (playbook #38).
+    review: RequisitionReview
+  }
+
+  # Everything the review page needs, decided on the server by the same functions the mutations use, so the page keeps no copy.
+  type RequisitionReview {
+    # A PO Admin has to approve before any purchase order is created, and why
+    needs_approval: Boolean!
+    approval_reason: String
+    edited_count: Int!
+    organizer_bought_count: Int!
+    unsigned_tolerance_count: Int!
+    # THE CALLER may edit, confirm, submit or send back (organizer_review), or approve / reject (review_approval)
+    caller_can_edit: Boolean!
+    caller_can_approve: Boolean!
+    last_rejection: RequisitionReviewRejection
+    totals: [RequisitionReviewTotal!]!
+  }
+
+  type RequisitionReviewRejection {
+    reason: String
+    by_name: String
+    at: String
+  }
+
+  # What was bought, per currency: what it came to when the review began and what it comes to now. Never added across currencies.
+  type RequisitionReviewTotal {
+    currency_code: String!
+    was: String!
+    now: String!
+    purchases: Int!
   }
 
   type RequisitionCurrencyTotal {

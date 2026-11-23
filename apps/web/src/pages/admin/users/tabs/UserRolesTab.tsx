@@ -23,8 +23,6 @@ import {
   GET_ROLE_TEMPLATES,
   SAVE_USER_PERMISSIONS,
   GET_USER_PO_POSITIONS,
-  GET_USER_PURCHASE_REVIEW,
-  SET_USER_PURCHASE_REVIEW,
 } from '../../../../graphql/permissions'
 import { ASSIGN_PO_POSITION, REMOVE_PO_POSITION } from '../../../../graphql/procurement'
 import type { AccessLevel } from '../../../../lib/permissionRegistry'
@@ -166,29 +164,6 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
     },
   )
   const poPositions = poData?.userPOPositions ?? []
-
-  // Purchases at Items Bought that need the requisition organizer's approval (migration 316). The server answers this
-  // only to the admins who manage PO positions, so when it refuses, the section is simply not shown.
-  const {
-    data: reviewData,
-    error: reviewError,
-    refetch: refetchReview,
-  } = useQuery<{ userPurchaseReview: boolean }>(GET_USER_PURCHASE_REVIEW, {
-    // The company this screen is showing, not the admin's session company.
-    variables: { userId, companyId: selectedCompanyId },
-    skip: !selectedCompanyId,
-    fetchPolicy: 'cache-and-network',
-  })
-  const purchaseReviewOn = reviewData?.userPurchaseReview ?? false
-  const [setPurchaseReview, { loading: savingReview }] = useMutation(SET_USER_PURCHASE_REVIEW, {
-    onCompleted: () => {
-      addToast({ type: 'success', message: t('admin.userRoles.purchaseReviewSaved') })
-      void refetchReview()
-    },
-    onError: (e) => {
-      addToast({ type: 'error', message: e.message })
-    },
-  })
 
   const [savePerms, { loading: saving }] = useMutation(SAVE_USER_PERMISSIONS, {
     onCompleted: () => {
@@ -479,37 +454,6 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
             )}
           </Card>
         </div>
-
-        {/* Purchase approval */}
-        {!reviewError && (
-          <div style={{ marginTop: '24px' }}>
-            <h3
-              style={{
-                fontSize: '13px',
-                fontWeight: 600,
-                color: theme.textPrimary,
-                marginBottom: '10px',
-              }}
-            >
-              {t('admin.userRoles.purchaseReview')}
-            </h3>
-            <Card>
-              <Checkbox
-                label={t('admin.userRoles.purchaseReviewToggle')}
-                checked={purchaseReviewOn}
-                disabled={savingReview}
-                onChange={(checked) => {
-                  void setPurchaseReview({
-                    variables: { userId, required: checked, companyId: selectedCompanyId },
-                  })
-                }}
-              />
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '8px' }}>
-                {t('admin.userRoles.purchaseReviewHint')}
-              </div>
-            </Card>
-          </div>
-        )}
       </div>
 
 
