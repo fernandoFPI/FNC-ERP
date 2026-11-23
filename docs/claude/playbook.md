@@ -3937,3 +3937,118 @@ Don't re-derive, check these first.
     `req-notification-handlers.test.ts`, web `OrganizerReviewPanel.test.tsx` (36), `RequisitionDetailReview.test.tsx` (14),
     `MyQueuePageReview.test.tsx` (5); 34 web mutations killed (one survived first). Related to #24 (a gate and the list that mirrors it),
     #33 (a status list), #59 and #60 (the automatic step it follows and the feature it replaced), #21, #44 and #112.
+
+116. **Letting a reviewer add and remove lines after approval, without the admin edit path: three things hang off a line, a deleted
+    row needs a snapshot, and an addition skips the whole pricing chain.** The user, after the organizer review (#115) went live:
+    the organizer must be able to add an item that was bought and forgotten and to remove a line that should not be there, and
+    "the admin edit I don't want it to be used if it's not necessary", so the review does it itself. Decisions (the user's): both
+    count as changes a PO Admin must approve; an added item skips the inventory check and the pricing steps (the approval is its
+    sign-off); a removal needs a reason; a removed line's purchases and receipts go with it. Migration 330: `po_lines.review_added_by/at`
+    marks an added line; `requisition_review_removed_lines` keeps what a removed line was.
+    (a) *A history that stores only the ids of rows it deletes can never say which row it was (#36).* The approver has to read what
+    was removed, and the line, its purchases and their receipts are gone the moment it is removed, so the name, quantity, unit, price,
+    currency, reason and a JSON snapshot of the purchases (vendor, qty, price, currency, whether it had a receipt, who bought it) are
+    written first, in the same transaction. The page's "was" total for a currency is read back from those snapshots (a purchase on an
+    ADDED line counts 0 in "was": it was not part of what was bought when the review began). A line the organizer added in this same
+    review and then removes was never approved, so it is deleted with no snapshot and leaves nothing to approve.
+    (b) *Everything that hangs off a line, in the order the foreign keys allow.* `assertLinesRemovable` (the existing check from #45)
+    names what blocks it (a receipt, an invoice, a return, a split line ...) as a sentence; stock already issued to the project
+    (a confirmed Store Out line) is refused by name; the line's reservation is released; its DRAFT Store Out lines are deleted and a
+    Store Out left empty is cancelled, not deleted (its number stays in the history). That last step is the one that matters:
+    `project_material_issue_lines.po_line_id` is ON DELETE SET NULL, so deleting the line alone leaves a draft Store Out line pointing
+    nowhere with its reservation already released, and confirming it later fails with "Reservation mismatch" (#44). The purchases go
+    before their receipt attachments (#21). Found by reading, NOT reproduced and NOT changed: the edit-request removal path
+    (`applyRequisitionEditChanges`) releases the reservation but does not touch the draft Store Out lines, so it has the same hazard.
+    (c) *The counts must survive a send-back and a rejection, or a change is forgotten.* The review decides whether a PO Admin is
+    needed from counts (`reviewCountsGW`: edited, organizer-bought, unsigned tolerance, and now added and removed). The edited-purchase
+    originals were cleared when the requisition was sent back to Items Bought (#115: "a new review starts clean"), which meant an
+    edit made, then sent back, then returned, no longer needed approval; that was a hole, and it is closed (the marks now stay with
+    their "was" values, the user's rule: a change is a change however many round trips it makes). Added lines and removals stayed
+    from the start (a row, and a row in its own table).
+    (d) *The approved totals snapshot goes stale when lines change.* `requisition_approved_totals` is written at approval; when an item
+    was added or removed it no longer matches the lines, so `refreshApprovedTotalsGW` rewrites it per currency (dropping a currency
+    with no line left) inside the fork's transaction, only when something was added or removed (a price edit leaves it as it was).
+    (e) *An added line carries its own approved price.* `approved_unit_price` is set to the price paid, otherwise the first check
+    against it (the over-tolerance flag) compares with nothing. The purchase is the organizer's own (`bought_by`), which already
+    forces a PO Admin; the receipt goes through one shared helper (`attachPurchaseReceiptGW`, used by `recordLinePurchase` too, so
+    the two cannot drift). The currency must be named (upper-cased, three letters, never defaulted, #74). A catalog product must be this
+    company's or the central warehouse's, the same two lists the requisition form offers.
+    (f) *Left as it is, on purpose.* An administrator can still file an edit request while a requisition is in the review (#112
+    keeps that path admin-only, and applying it already refuses any line that has a purchase); it is not blocked. The stock loop
+    ("send some items back to the inventory check") is NOT built yet.
+    (f2) *The first real use found what the first version refused: a quantity over the order, and a wrong currency (migration 331).*
+    The organizer tried to make a purchase 15 where the line was ordered for 1 and got "Cannot make it 15: the line needs 1 in all and
+    the other purchases already cover 1" (a message that also misreported the room left as "already covered"), and the Change row had
+    no currency box. A review that cannot express "I really bought 15" or "this was in dinars" sends people to remove and re-add the
+    line, which loses the line's history. Rules now: any quantity above zero is accepted; a quantity above the order raises the line's
+    ordered quantity, below it leaves the shortfall as an accepted short (the same thing "marked short" means at Items Bought); both
+    are settled ONCE, when the purchase orders are made (`settleReviewLineQuantitiesGW`, rule in `settleLineQuantity`), so nothing is
+    written to the lines while the organizer is still changing his mind, changing it back is no change, and a short mark on a line
+    that is fully bought again is cleared. The review skips the Items Bought coverage gate for that reason (`skipCoverage`); the PO
+    Admin's approval is the control, and he sees "was / now". A currency change is remembered like quantity and price
+    (`review_original_currency`, migration 331), counts as a change on its own, and the review's per-currency "was" totals are read
+    in the ORIGINAL currency while "now" is read in the current one (before, a changed currency would have moved the old value into
+    the new currency's column). A purchase moved to a currency other than its line's cannot be compared with the approved price (nothing
+    is converted), so it is never flagged over tolerance; any change of price or currency drops an earlier tolerance sign-off. A send
+    back to Items Bought for a line left under-bought makes the buyers buy the rest or mark it short (the normal Items Bought gate).
+    The approved-totals snapshot is also rewritten when a quantity was settled. How to spot the class: a refusal rule written for the
+    buying step that is carried unchanged into a review step whose whole job is to correct it; a message that prints a derived number
+    under the wrong label.
+    (g) *Test traps met.* The fixture company `TEST-FIXTURE-GATEWAY-B` is flagged as the central warehouse in the test database, so a
+    "product of another company" taken from it is correctly accepted: use a non-central company (`TEST-FIXTURE-HR`) for the refusal and
+    prove the central case by switching the flag on and off inside the test and restoring it. The shared `Input` does not tie its
+    label to the box (find the box next to the label's text). jest-dom reads an empty number input as `null` (compare `.value`). A
+    state change made by calling a mutation's `onCompleted` outside `act` is not flushed. A long Node script inside a Bash heredoc
+    with backticks and quotes can be mis-parsed by the shell and runs nothing: write it to a file (the failed run changed nothing, which
+    is the only reason it did not matter). The worktree's `vitest` hit the duplicate-React error again; the web tests ran in the scratch
+    copy of the app. A mutation whose only symptom is a database error (lower-case currency refused by a CHECK) is a real kill but
+    prints no assertion text: read its message before counting it.
+    Mutation-checked: 32 of 33 backend mutations killed (three survived at first: an addition by an administrator alone not needing approval, a currency with no line left staying in the approved totals, and the company filter on the removed-lines query; the first two each got a test and died, the third is redundant because the requisition itself is already company-checked, so it is an equivalent change), 31 of 31 web mutations killed (one survived first, closing the dialog while saving, because the test only clicked the disabled Cancel; it now presses Escape and the cross too). Not verified in a browser. Tests:
+    `services/gateway/tests/requisition-review-add-remove.test.ts` (real Postgres through the real mutations and the real schema, 33 tests),
+    the updated rules test in `requisition-organizer-review.test.ts`, web `OrganizerReviewLines.test.tsx`, `AddReviewItemModal.test.tsx`
+    and the parity test in `OrganizerReviewPanel.test.tsx` (now reads both sources). Related to #115 (the review), #36 (a history that
+    keeps only ids), #44 and #45 (what hangs off a line), #21, #74, #112 (the admin-only edit path this does not use).
+
+117. **Covering a shortfall from stock inside the review: reserve now, make the Store Out only after the approval, and one shelf per
+    line.** The user wanted every case of the review settled ("a solid flow"), and the last one was an item that turns out to be on
+    the shelf. Design, chosen by me and stated in the answer (not asked): the organizer lowers a purchase (the quantity he does not
+    buy is the SHORTFALL: ordered, minus stock, minus bought) and covers all or part of it from stock instead of accepting it as
+    short (`takeReviewLineFromStock`, `putBackReviewStock`, migration 332 `po_lines.review_stock_qty/by/at`). A line bought in full
+    that should come from stock entirely is "send back to Items Bought with that purchase removed, then resolve from stock" (the
+    existing path), because a purchase has a receipt and a vendor and a real purchase is not quietly replaced. It counts as a change
+    a PO Admin approves (`stocked` in `ReviewCounts`, "N items were taken from stock").
+    (a) *Reserve at once, make the Store Out at the approval.* The Items Bought "resolve from stock" reserves the stock AND makes the
+    draft Store Out immediately, which is right there (the requisition is approved). In the review nothing is approved yet, and a
+    draft Store Out can be confirmed by a store keeper, which issues stock to the project and charges it. So the review only reserves
+    (nobody else can take it) and marks the quantity; `forkChildPurchaseOrders` calls `coverRequisitionStockLines` (idempotent: only
+    the part no Store Out covers yet) when a line was taken from stock, in the same transaction as the purchase orders. Undo is then
+    just releasing the reservation and restoring the line: no Store Out line to delete. The one hole: a buyer's resolve-from-stock
+    after a send-back covers the WHOLE uncovered quantity, including what the review reserved, so a Store Out can exist before the
+    approval; "Put back" refuses in that case, naming the Store Out.
+    (b) *One shelf per line.* A line has one `source_location_id` and its Store Out is drawn from it (the existing resolve overwrites
+    it). Taking more for a line that already draws from another shelf would silently move the earlier quantity's source, so it is
+    refused with "take the rest from the same one". Put back keeps stock the inventory check had given the line (only what this review
+    took goes back) and clears the shelf only when nothing is left.
+    (c) *The same checks as the other two ways in.* The location must be the company's, the central warehouse's, or a company the caller
+    has a role in (same rule as the inventory check and resolve-from-stock), and not a virtual location (#105: a Virtual Consumption
+    "reservation" is meaningless); the available quantity (on hand minus reserved) is read under a row lock on the balance; a custom
+    item has no stock. Who may: the organizer or an admin, in Organizer Review only (`canActOnReview`).
+    (d) *Marks survive a send-back (and the old behaviour was a hole).* #115 cleared the edited-purchase marks on a send-back so an edit,
+    sent back and returned, no longer needed approval. That is fixed here with the quantity / currency work: nothing the organizer
+    changed is forgotten, and `review_stock_qty` stays too.
+    (e) *Quantity and currency were the first gap the real use found (migration 331).* Any quantity above zero is accepted (the line's
+    ordered quantity follows what was bought when the purchase orders are made, a shortfall becomes an accepted short), and a currency
+    can be changed; the PO Admin approves it, seeing "was / now". Both live in `settleLineQuantity` and
+    `settleReviewLineQuantitiesGW` (the fork), the coverage gate is skipped in the review (`skipCoverage`), and the review's per-currency
+    "was" totals read the ORIGINAL currency. Details are in the tests of `requisition-organizer-review.test.ts`. A parameter used in two
+    expressions needs a cast (`$2::numeric`, #57 trap (a)); the first run of put back failed on exactly that.
+    (f) *Not built.* A line bought in full going entirely to stock without a send-back (see above); the Store Out is not confirmed here
+    (a store keeper does that after the PO Admin's approval and the stage Sourcing, as for any stock-covered line); a second warning for
+    stale stock cost (#111) is not repeated in the review, the stock levels are not shown per location in the dialog (the server refuses
+    an insufficient shelf with the numbers), and nothing was looked at in a browser.
+    Mutation-checked: 16 of 16 backend mutations killed (one first read as surviving only because that run covered a single test file; the rules test in the other file kills it). Tests: `services/gateway/tests/requisition-review-add-remove.test.ts` (block
+    "taking part of a line from stock", real Postgres through the real mutations: reserve, mark, no Store Out yet, approval makes it once,
+    too much, nothing left, two parts, shelf cannot give, virtual / unreachable / custom / second shelf, who and when, put back (also with
+    inventory-check stock and with an existing Store Out), marks through a send-back and a rejection, removal releasing the reservation),
+    `requisition-organizer-review.test.ts` (rules), web `TakeFromStockModal.test.tsx` (13), the "taking part of a line from stock" block in
+    `OrganizerReviewLines.test.tsx` (13) and the key-parity test of `OrganizerReviewPanel.test.tsx`. Related to #44, #105, #115, #116.
