@@ -14,11 +14,15 @@ import type { Column } from '../ui/Table'
 import { StageActionBar } from './StageActionBar'
 import { LinePriceInput } from './LinePriceInput'
 import { EntityAttachments } from '../inventory/EntityAttachments'
+import { AddReviewItemModal } from './AddReviewItemModal'
+import { TakeFromStockModal } from './TakeFromStockModal'
 import {
   APPROVE_REVIEW,
   CONFIRM_REVIEW,
   EDIT_REVIEW_PURCHASE,
+  PUT_BACK_REVIEW_STOCK,
   REJECT_REVIEW,
+  REMOVE_REVIEW_LINE,
   SEND_BACK_TO_BUYING,
   SUBMIT_REVIEW_FOR_APPROVAL,
 } from '../../graphql/requisitions'
@@ -27,6 +31,10 @@ import {
 // organizer double-checks what was bought. He may change a purchase's quantity or price (receipts are view-only), confirm,
 // ask a PO Admin to approve what he changed, or send the requisition back to the buyers. A PO Admin approves or rejects.
 // Every rule (who may do what, whether a PO Admin is needed) comes from the server in `review`; this component keeps no copy.
+
+// The currencies the organizer can move a purchase to (the same short list as the add-an-item dialog); a purchase already
+// in another currency keeps its own as a choice.
+const REVIEW_CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
 export interface ReviewPurchaseRow {
   id: string
@@ -41,6 +49,7 @@ export interface ReviewPurchaseRow {
   receipt_file_id?: string | null
   review_original_qty?: string | null
   review_original_price?: string | null
+  review_original_currency?: string | null
 }
 
 export interface ReviewLineRow {
@@ -48,7 +57,34 @@ export interface ReviewLineRow {
   line_number?: number | null
   description?: string | null
   product_name?: string | null
+  /** Set on a line the organizer added in this review (migration 330). */
+  review_added_at?: string | null
+  /** The catalog item, when there is one: a custom item has no stock to take from. */
+  product_id?: string | null
+  /** What the line was ordered for, and what stock already covers (the inventory check, or an earlier take in this review). */
+  qty?: string | null
+  qty_from_stock?: string | null
+  source_location_name?: string | null
+  /** The quantity he took from stock instead of buying it in this review (migration 332). */
+  review_stock_qty?: string | null
   purchases?: ReviewPurchaseRow[] | null
+}
+
+export interface ReviewRemovedLine {
+  id: string
+  line_number?: number | null
+  description?: string | null
+  qty_ordered?: string | null
+  uom?: string | null
+  reason: string
+  removed_by_name?: string | null
+  purchases: {
+    vendor?: string | null
+    qty?: string | null
+    price?: string | null
+    currency?: string | null
+    had_receipt?: boolean | null
+  }[]
 }
 
 export interface ReviewData {
@@ -57,6 +93,11 @@ export interface ReviewData {
   edited_count: number
   organizer_bought_count: number
   unsigned_tolerance_count: number
+  /** Lines added and removed in this review (migration 330), and the removed ones as they were. */
+  added_count?: number
+  stocked_count?: number
+  removed_count?: number
+  removed_lines?: ReviewRemovedLine[] | null
   caller_can_edit: boolean
   caller_can_approve: boolean
   last_rejection?: { reason?: string | null; by_name?: string | null; at?: string | null } | null
@@ -83,6 +124,20 @@ export interface OrganizerReviewPanelProps {
 
 interface Row extends ReviewPurchaseRow {
   lineName: string
+  lineId: string
+  /** The line was added in this review. */
+  added: boolean
+  /** A line with nothing bought on it (covered from stock, or marked short): drawn as one row so it can still be removed. */
+  noPurchase?: boolean
+  /** The first row of its line: what belongs to the whole line (the stock notes and buttons) is drawn once, here. */
+  firstOfLine: boolean
+  /** What is left to cover on the line: ordered, minus stock, minus what was bought (zero or more). */
+  shortfall: number
+  /** The quantity taken from stock in this review, and where from. */
+  stockTaken: number
+  stockLocation: string | null
+  hasProduct: boolean
+  fromStock: number
 }
 
 // Up to four decimals: a price of 12.345 must not read 12.35 in a screen that is about checking prices.
@@ -93,6 +148,11 @@ const fmt = (n: string | number | null | undefined) =>
   })
 const num = (n: string | null | undefined) => parseFloat(String(n ?? 0)) || 0
 // An empty product name or description must still fall back, so this tests for text rather than for null.
+// A removed line's name: an empty description still falls back to a dash, so this tests for text rather than for null.
+function orDash(s: string | null | undefined): string {
+  if (s) return s
+  return '—'
+}
 function lineNameOf(l: ReviewLineRow): string {
   if (l.product_name) return l.product_name
   if (l.description) return l.description
@@ -111,12 +171,26 @@ export function OrganizerReviewPanel({
   const inReview = requisition.status === 'organizer_review'
   const inApproval = requisition.status === 'review_approval'
 
-  const [editing, setEditing] = useState<{ id: string; qty: string; price: string } | null>(null)
+  const [editing, setEditing] = useState<{
+    id: string
+    qty: string
+    price: string
+    currency: string
+  } | null>(null)
   const [receiptsFor, setReceiptsFor] = useState<string | null>(null)
   const [sendBackOpen, setSendBackOpen] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [removeIds, setRemoveIds] = useState<string[]>([])
+  const [addOpen, setAddOpen] = useState(false)
+  const [removeLineFor, setRemoveLineFor] = useState<{ id: string; name: string } | null>(null)
+  const [stockFor, setStockFor] = useState<{
+    id: string
+    name: string
+    shortfall: number
+    location?: string | null
+  } | null>(null)
+  const [removeLineReason, setRemoveLineReason] = useState('')
 
   const done = (message: string) => () => {
     addToast({ message, type: 'success' })
@@ -153,6 +227,18 @@ export function OrganizerReviewPanel({
     },
     onError: failed,
   })
+  const [removeLine, { loading: removingLine }] = useMutation(REMOVE_REVIEW_LINE, {
+    onCompleted: () => {
+      setRemoveLineFor(null)
+      setRemoveLineReason('')
+      done(t('req.review.toastRemoved'))()
+    },
+    onError: failed,
+  })
+  const [putBackStock, { loading: puttingBack }] = useMutation(PUT_BACK_REVIEW_STOCK, {
+    onCompleted: done(t('req.review.toastStockPutBack')),
+    onError: failed,
+  })
   const [sendBack, { loading: sendingBack }] = useMutation(SEND_BACK_TO_BUYING, {
     onCompleted: () => {
       setSendBackOpen(false)
@@ -167,14 +253,51 @@ export function OrganizerReviewPanel({
 
   const rows: Row[] = [...requisition.lines]
     .sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0))
-    .flatMap((l) => (l.purchases ?? []).map((p) => ({ ...p, lineName: lineNameOf(l) })))
+    .flatMap((l): Row[] => {
+      const purchases = l.purchases ?? []
+      const bought = purchases.reduce((s, p) => s + num(p.qty), 0)
+      const base = {
+        lineName: lineNameOf(l),
+        lineId: l.id,
+        added: !!l.review_added_at,
+        shortfall: Math.max(num(l.qty) - num(l.qty_from_stock) - bought, 0),
+        stockTaken: num(l.review_stock_qty),
+        stockLocation: l.source_location_name ?? null,
+        hasProduct: !!l.product_id,
+        fromStock: num(l.qty_from_stock),
+      }
+      if (purchases.length === 0)
+        return [
+          {
+            ...base,
+            firstOfLine: true,
+            id: `line:${l.id}`,
+            currency_code: '',
+            qty: '',
+            actual_unit_price: '',
+            over_tolerance: false,
+            noPurchase: true,
+          },
+        ]
+      return purchases.map((p, i) => ({ ...p, ...base, firstOfLine: i === 0 }))
+    })
+  // Purchases only: what the "send back" dialog can remove and what the totals are about.
+  const purchaseRows = rows.filter((r) => !r.noPurchase)
+  const defaultCurrency = review.totals.length === 1 ? review.totals[0]?.currency_code : undefined
 
   const canEdit = inReview && review.caller_can_edit
   const changed = (p: ReviewPurchaseRow) =>
-    p.review_original_qty != null || p.review_original_price != null
+    p.review_original_qty != null ||
+    p.review_original_price != null ||
+    p.review_original_currency != null
 
   const startEdit = (p: Row) => {
-    setEditing({ id: p.id, qty: String(num(p.qty)), price: String(num(p.actual_unit_price)) })
+    setEditing({
+      id: p.id,
+      qty: String(num(p.qty)),
+      price: String(num(p.actual_unit_price)),
+      currency: p.currency_code,
+    })
   }
   const saveEdit = (p: Row) => {
     if (!editing) return
@@ -186,7 +309,8 @@ export function OrganizerReviewPanel({
     }
     const qtyChanged = Math.abs(qty - num(p.qty)) > 0.00005
     const priceChanged = Math.abs(price - num(p.actual_unit_price)) > 0.00005
-    if (!qtyChanged && !priceChanged) {
+    const currencyChanged = editing.currency !== p.currency_code
+    if (!qtyChanged && !priceChanged && !currencyChanged) {
       setEditing(null)
       return
     }
@@ -195,6 +319,7 @@ export function OrganizerReviewPanel({
         purchaseId: p.id,
         qty: qtyChanged ? qty : undefined,
         actualUnitPrice: priceChanged ? price : undefined,
+        currencyCode: currencyChanged ? editing.currency : undefined,
       },
     })
   }
@@ -207,7 +332,21 @@ export function OrganizerReviewPanel({
       minWidth: '160px',
       mobilePrimary: true,
       render: (p) => (
-        <span style={{ fontWeight: 600, color: theme.textPrimary }}>{p.lineName}</span>
+        <div>
+          <span style={{ fontWeight: 600, color: theme.textPrimary }}>{p.lineName}</span>
+          {p.firstOfLine && p.stockTaken > 0 && (
+            <div style={{ fontSize: '12px', color: theme.info }}>
+              {p.stockLocation
+                ? t('req.review.stockTaken', { qty: fmt(p.stockTaken), location: p.stockLocation })
+                : t('req.review.stockTakenNoWhere', { qty: fmt(p.stockTaken) })}
+            </div>
+          )}
+          {p.firstOfLine && p.shortfall > 0.0001 && !p.noPurchase && (
+            <div style={{ fontSize: '12px', color: theme.textSecondary }}>
+              {t('req.review.notBought', { n: fmt(p.shortfall) })}
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -215,13 +354,22 @@ export function OrganizerReviewPanel({
       header: t('req.review.vendor'),
       wrap: true,
       minWidth: '120px',
-      render: (p) => <span style={{ color: theme.textPrimary }}>{p.vendor_name ?? '—'}</span>,
+      render: (p) =>
+        p.noPurchase ? (
+          <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
+            {t('req.review.noPurchase')}
+          </span>
+        ) : (
+          <span style={{ color: theme.textPrimary }}>{p.vendor_name ?? '—'}</span>
+        ),
     },
     {
       key: 'qty',
       header: t('req.review.qty'),
       render: (p) =>
-        editing?.id === p.id ? (
+        p.noPurchase ? (
+          <span style={{ color: theme.textSecondary }}>—</span>
+        ) : editing?.id === p.id ? (
           <LinePriceInput
             value={editing.qty}
             width="96px"
@@ -247,7 +395,9 @@ export function OrganizerReviewPanel({
       key: 'price',
       header: t('req.review.unitPrice'),
       render: (p) =>
-        editing?.id === p.id ? (
+        p.noPurchase ? (
+          <span style={{ color: theme.textSecondary }}>—</span>
+        ) : editing?.id === p.id ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <LinePriceInput
               value={editing.price}
@@ -257,7 +407,31 @@ export function OrganizerReviewPanel({
               }}
               ariaLabel={t('req.review.priceOf', { item: p.lineName })}
             />
-            <span style={{ fontSize: '12px', color: theme.textSecondary }}>{p.currency_code}</span>
+            <select
+              aria-label={t('req.review.currencyOf', { item: p.lineName })}
+              value={editing.currency}
+              onChange={(e) => {
+                setEditing({ ...editing, currency: e.target.value })
+              }}
+              style={{
+                height: '36px',
+                borderRadius: '8px',
+                border: `1px solid ${theme.borderField}`,
+                background: theme.bgSurface,
+                color: theme.textPrimary,
+                padding: '0 8px',
+                fontSize: '13px',
+              }}
+            >
+              {(REVIEW_CURRENCIES.includes(p.currency_code)
+                ? REVIEW_CURRENCIES
+                : [p.currency_code, ...REVIEW_CURRENCIES]
+              ).map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
         ) : (
           <div>
@@ -266,7 +440,13 @@ export function OrganizerReviewPanel({
             </span>
             {p.review_original_price != null && (
               <div style={{ fontSize: '12px', color: theme.textSecondary }}>
-                {t('req.review.was', { value: fmt(p.review_original_price) })}
+                {t('req.review.was', {
+                  value:
+                    p.review_original_currency != null &&
+                    p.review_original_currency !== p.currency_code
+                      ? `${fmt(p.review_original_price)} ${p.review_original_currency}`
+                      : fmt(p.review_original_price),
+                })}
               </div>
             )}
           </div>
@@ -275,17 +455,22 @@ export function OrganizerReviewPanel({
     {
       key: 'total',
       header: t('req.review.total'),
-      render: (p) => (
-        <span style={{ fontWeight: 600, color: theme.textPrimary }}>
-          {fmt(num(p.qty) * num(p.actual_unit_price))} {p.currency_code}
-        </span>
-      ),
+      render: (p) =>
+        p.noPurchase ? (
+          <span style={{ color: theme.textSecondary }}>—</span>
+        ) : (
+          <span style={{ fontWeight: 600, color: theme.textPrimary }}>
+            {fmt(num(p.qty) * num(p.actual_unit_price))} {p.currency_code}
+          </span>
+        ),
     },
     {
       key: 'receipts',
       header: t('req.review.receipts'),
       render: (p) =>
-        p.receipt_file_id ? (
+        p.noPurchase ? (
+          <span style={{ color: theme.textSecondary }}>—</span>
+        ) : p.receipt_file_id ? (
           <ActionButton
             variant="ghost"
             size="sm"
@@ -304,7 +489,11 @@ export function OrganizerReviewPanel({
       header: t('req.review.boughtBy'),
       wrap: true,
       minWidth: '110px',
-      render: (p) => <span style={{ color: theme.textSecondary }}>{p.bought_by_name ?? '—'}</span>,
+      render: (p) => (
+        <span style={{ color: theme.textSecondary }}>
+          {p.noPurchase ? '—' : (p.bought_by_name ?? '—')}
+        </span>
+      ),
     },
     {
       key: 'state',
@@ -312,6 +501,7 @@ export function OrganizerReviewPanel({
       mobileAction: true,
       render: (p) => (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {p.added && <Badge variant="info">{t('req.review.addedBadge')}</Badge>}
           {changed(p) && <Badge variant="warning">{t('req.review.changed')}</Badge>}
           {p.over_tolerance && (
             <Badge variant={p.tolerance_approved_by ? 'success' : 'danger'}>
@@ -342,16 +532,68 @@ export function OrganizerReviewPanel({
             </>
           ) : (
             canEdit && (
-              <ActionButton
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  startEdit(p)
-                }}
-              >
-                {t('req.review.change')}
-              </ActionButton>
+              <>
+                {!p.noPurchase && (
+                  <ActionButton
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      startEdit(p)
+                    }}
+                  >
+                    {t('req.review.change')}
+                  </ActionButton>
+                )}
+                {p.firstOfLine && p.hasProduct && p.shortfall > 0.0001 && (
+                  <ActionButton
+                    variant="outline"
+                    size="sm"
+                    ariaLabel={t('req.review.takeFromStockAria', { item: p.lineName })}
+                    onClick={() => {
+                      setStockFor({
+                        id: p.lineId,
+                        name: p.lineName,
+                        shortfall: p.shortfall,
+                        location: p.fromStock > 0 ? p.stockLocation : null,
+                      })
+                    }}
+                  >
+                    {t('req.review.takeFromStock')}
+                  </ActionButton>
+                )}
+                {p.firstOfLine && p.stockTaken > 0 && (
+                  <ActionButton
+                    variant="ghost"
+                    size="sm"
+                    loading={puttingBack}
+                    ariaLabel={t('req.review.putBackAria', { item: p.lineName })}
+                    onClick={() => {
+                      void putBackStock({
+                        variables: { requisitionId: requisition.id, lineId: p.lineId },
+                      })
+                    }}
+                  >
+                    {t('req.review.putBack')}
+                  </ActionButton>
+                )}
+                <ActionButton
+                  variant="ghost"
+                  size="sm"
+                  ariaLabel={t('req.review.removeItemAria', { item: p.lineName })}
+                  onClick={() => {
+                    setRemoveLineReason('')
+                    setRemoveLineFor({ id: p.lineId, name: p.lineName })
+                  }}
+                >
+                  {t('req.review.removeItem')}
+                </ActionButton>
+              </>
             )
+          )}
+          {p.added && (inApproval || canEdit) && (
+            <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+              {t('req.review.addedNote')}
+            </span>
           )}
         </div>
       ),
@@ -473,17 +715,37 @@ export function OrganizerReviewPanel({
     <>
       <Card style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: theme.textPrimary }}>
-              {inApproval ? t('req.review.titleApproval') : t('req.review.titleReview')}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: theme.textPrimary }}>
+                {inApproval ? t('req.review.titleApproval') : t('req.review.titleReview')}
+              </div>
+              <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
+                {inApproval
+                  ? review.caller_can_approve
+                    ? t('req.review.introApprover', { name: organizerName })
+                    : t('req.review.introWaitingApproval')
+                  : t('req.review.introReview')}
+              </div>
             </div>
-            <div style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px' }}>
-              {inApproval
-                ? review.caller_can_approve
-                  ? t('req.review.introApprover', { name: organizerName })
-                  : t('req.review.introWaitingApproval')
-                : t('req.review.introReview')}
-            </div>
+            {canEdit && (
+              <ActionButton
+                variant="outline"
+                onClick={() => {
+                  setAddOpen(true)
+                }}
+              >
+                {t('req.review.addItem')}
+              </ActionButton>
+            )}
           </div>
 
           {inReview && review.last_rejection && (
@@ -532,8 +794,129 @@ export function OrganizerReviewPanel({
             mobileLayout="fields"
             readable
           />
+
+          {(review.removed_lines ?? []).length > 0 && (
+            <div
+              data-testid="review-removed-lines"
+              style={{
+                borderTop: `1px solid ${theme.borderStrong}`,
+                paddingTop: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ fontSize: '13px', fontWeight: 700, color: theme.textPrimary }}>
+                {t('req.review.removedHeading')}
+              </div>
+              {(review.removed_lines ?? []).map((r) => (
+                <div key={r.id} style={{ fontSize: '13px', color: theme.textPrimary }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {t('req.review.removedLine', {
+                      name: orDash(r.description),
+                      qty: fmt(r.qty_ordered),
+                      unit: r.uom ?? '',
+                    })}
+                  </div>
+                  {r.purchases.map((pp, i) => (
+                    <div key={i} style={{ color: theme.textSecondary }}>
+                      {t('req.review.removedBought', {
+                        vendor: pp.vendor ?? '—',
+                        qty: fmt(pp.qty),
+                        price: fmt(pp.price),
+                        currency: pp.currency ?? '',
+                      })}
+                    </div>
+                  ))}
+                  <div style={{ color: theme.textSecondary }}>
+                    {t('req.review.removedBy', {
+                      name: r.removed_by_name ?? '—',
+                      reason: r.reason,
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </Card>
+
+      <AddReviewItemModal
+        open={addOpen}
+        requisitionId={requisition.id}
+        defaultCurrency={defaultCurrency}
+        onClose={() => {
+          setAddOpen(false)
+        }}
+        onAdded={onChanged}
+      />
+
+      <TakeFromStockModal
+        line={stockFor}
+        requisitionId={requisition.id}
+        onClose={() => {
+          setStockFor(null)
+        }}
+        onDone={onChanged}
+      />
+
+      <Modal
+        open={removeLineFor !== null}
+        onClose={() => {
+          setRemoveLineFor(null)
+        }}
+        title={t('req.review.removeItemTitle', { item: removeLineFor?.name ?? '' })}
+        size="md"
+        footer={
+          <>
+            <ActionButton
+              variant="outline"
+              onClick={() => {
+                setRemoveLineFor(null)
+              }}
+            >
+              {t('req.review.cancel')}
+            </ActionButton>
+            <ActionButton
+              variant="danger"
+              loading={removingLine}
+              disabled={removeLineReason.trim().length === 0}
+              onClick={() => {
+                if (!removeLineFor) return
+                void removeLine({
+                  variables: {
+                    requisitionId: requisition.id,
+                    lineId: removeLineFor.id,
+                    reason: removeLineReason.trim(),
+                  },
+                })
+              }}
+            >
+              {t('req.review.removeItemConfirm')}
+            </ActionButton>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+            {t('req.review.removeItemIntro')}
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+            {t('req.review.removeItemWarn')}
+          </div>
+          <Textarea
+            field
+            label={t('req.review.removeItemReasonLabel')}
+            placeholder={t('req.review.removeItemReasonPlaceholder')}
+            value={removeLineReason}
+            rows={3}
+            autoFocus
+            onChange={(e) => {
+              setRemoveLineReason(e.target.value)
+            }}
+          />
+        </div>
+      </Modal>
 
       {barSlot ? createPortal(bar, barSlot) : bar}
 
@@ -607,7 +990,7 @@ export function OrganizerReviewPanel({
               setReason(e.target.value)
             }}
           />
-          {rows.length > 0 && (
+          {purchaseRows.length > 0 && (
             <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
               <legend style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
                 {t('req.review.removeTitle')}
@@ -616,7 +999,7 @@ export function OrganizerReviewPanel({
                 {t('req.review.removeHint')}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {rows.map((p) => (
+                {purchaseRows.map((p) => (
                   <label
                     key={p.id}
                     style={{

@@ -142,6 +142,8 @@ export const REQUISITION_QUERY = gql`
         short_marked_at
         closed_at
         closed_reason
+        review_added_at
+        review_stock_qty
         flag_reason
         flagged_at
         flagged_by_name
@@ -165,6 +167,7 @@ export const REQUISITION_QUERY = gql`
           receipt_file_id
           review_original_qty
           review_original_price
+          review_original_currency
         }
       }
       # The organizer review (migration 329): filled only while the requisition is in organizer_review or review_approval.
@@ -174,6 +177,29 @@ export const REQUISITION_QUERY = gql`
         edited_count
         organizer_bought_count
         unsigned_tolerance_count
+        added_count
+        stocked_count
+        removed_count
+        removed_lines {
+          id
+          line_number
+          description
+          qty_ordered
+          uom
+          currency_code
+          unit_price
+          reason
+          removed_by_name
+          removed_at
+          purchases {
+            vendor
+            qty
+            price
+            currency
+            had_receipt
+            bought_by
+          }
+        }
         caller_can_edit
         caller_can_approve
         last_rejection {
@@ -546,13 +572,70 @@ export const REQUISITION_ITEMS_BOUGHT_QUERY = gql`
 // After Items Bought the organizer double-checks what was bought: he may change a purchase's quantity or price, confirm,
 // ask a PO Admin to approve what he changed, or send the requisition back to the buyers. A PO Admin approves or rejects.
 export const EDIT_REVIEW_PURCHASE = gql`
-  mutation EditReviewPurchase($purchaseId: ID!, $qty: Float, $actualUnitPrice: Float) {
-    editReviewPurchase(purchaseId: $purchaseId, qty: $qty, actualUnitPrice: $actualUnitPrice) {
+  mutation EditReviewPurchase(
+    $purchaseId: ID!
+    $qty: Float
+    $actualUnitPrice: Float
+    $currencyCode: String
+  ) {
+    editReviewPurchase(
+      purchaseId: $purchaseId
+      qty: $qty
+      actualUnitPrice: $actualUnitPrice
+      currencyCode: $currencyCode
+    ) {
       id
       qty
       actual_unit_price
+      currency_code
       review_original_qty
       review_original_price
+      review_original_currency
+    }
+  }
+`
+
+// Migration 330: in the review the organizer can also add an item that was bought and forgotten (the line and its purchase
+// together, with the receipt) and remove a line with a reason. Both count as changes a PO Admin has to approve.
+export const ADD_REVIEW_LINE = gql`
+  mutation AddReviewLine($input: AddReviewLineInput!) {
+    addReviewLine(input: $input) {
+      id
+      status
+    }
+  }
+`
+
+export const REMOVE_REVIEW_LINE = gql`
+  mutation RemoveReviewLine($requisitionId: ID!, $lineId: ID!, $reason: String!) {
+    removeReviewLine(requisitionId: $requisitionId, lineId: $lineId, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+// Migration 332: cover the part of a line that was not bought from stock instead (it reserves the stock; the Store Out is made when
+// the purchase orders are), and put it back.
+export const TAKE_REVIEW_LINE_FROM_STOCK = gql`
+  mutation TakeReviewLineFromStock($requisitionId: ID!, $lineId: ID!, $sourceLocationId: ID!, $qty: Float!) {
+    takeReviewLineFromStock(
+      requisitionId: $requisitionId
+      lineId: $lineId
+      sourceLocationId: $sourceLocationId
+      qty: $qty
+    ) {
+      id
+      status
+    }
+  }
+`
+
+export const PUT_BACK_REVIEW_STOCK = gql`
+  mutation PutBackReviewStock($requisitionId: ID!, $lineId: ID!) {
+    putBackReviewStock(requisitionId: $requisitionId, lineId: $lineId) {
+      id
+      status
     }
   }
 `

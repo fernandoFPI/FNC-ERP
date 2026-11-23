@@ -310,6 +310,125 @@ describe('changing a purchase', () => {
     })
   })
 
+  it('can move a purchase to another currency: the box starts on its own currency and only a changed one is sent', () => {
+    show()
+    openEdit('Pipe 20mm')
+    const box = () =>
+      screen.getByRole<HTMLSelectElement>('combobox', { name: 'Currency: Pipe 20mm' })
+    expect(box().value).toBe('USD')
+    // nothing else changed and the currency left alone: closes without asking
+    fireEvent.click(within(row('Pipe 20mm')).getByRole('button', { name: 'Save' }))
+    expect(mutationFns.EditReviewPurchase).not.toHaveBeenCalled()
+    openEdit('Pipe 20mm')
+    fireEvent.change(box(), { target: { value: 'IQD' } })
+    fireEvent.change(priceBox(), { target: { value: '18000' } })
+    fireEvent.click(within(row('Pipe 20mm')).getByRole('button', { name: 'Save' }))
+    expect(mutationFns.EditReviewPurchase).toHaveBeenCalledWith({
+      variables: { purchaseId: 'p1', qty: undefined, actualUnitPrice: 18000, currencyCode: 'IQD' },
+    })
+  })
+
+  it('a currency alone is enough to save, and a quantity edit sends no currency', () => {
+    show()
+    openEdit('Pipe 20mm')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Currency: Pipe 20mm' }), {
+      target: { value: 'EUR' },
+    })
+    fireEvent.click(within(row('Pipe 20mm')).getByRole('button', { name: 'Save' }))
+    expect(mutationFns.EditReviewPurchase).toHaveBeenLastCalledWith({
+      variables: {
+        purchaseId: 'p1',
+        qty: undefined,
+        actualUnitPrice: undefined,
+        currencyCode: 'EUR',
+      },
+    })
+    fireEvent.click(within(row('Pipe 20mm')).getByRole('button', { name: 'Cancel' }))
+    openEdit('Pipe 20mm')
+    fireEvent.change(qtyBox(), { target: { value: '15' } })
+    fireEvent.click(within(row('Pipe 20mm')).getByRole('button', { name: 'Save' }))
+    expect(mutationFns.EditReviewPurchase.mock.calls.at(-1)?.[0]).toEqual({
+      variables: { purchaseId: 'p1', qty: 15 },
+    })
+    expect(
+      (
+        mutationFns.EditReviewPurchase.mock.calls.at(-1)?.[0] as {
+          variables: Record<string, unknown>
+        }
+      ).variables.currencyCode,
+    ).toBeUndefined()
+  })
+
+  it('a purchase in a currency outside the short list keeps its own as a choice', () => {
+    show(
+      requisition({
+        lines: [
+          {
+            id: 'l1',
+            line_number: 1,
+            description: 'Copper pipe',
+            product_name: 'Pipe 20mm',
+            purchases: [purchase({ currency_code: 'GBP' })],
+          },
+        ],
+      }),
+    )
+    openEdit('Pipe 20mm')
+    const box = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Currency: Pipe 20mm' })
+    expect(box.value).toBe('GBP')
+    expect(Array.from(box.options).map((o) => o.value)).toEqual([
+      'GBP',
+      'IQD',
+      'USD',
+      'EUR',
+      'TRY',
+      'AED',
+    ])
+  })
+
+  it('shows the old currency in the "was" note when the currency was changed', () => {
+    show(
+      requisition({
+        lines: [
+          {
+            id: 'l1',
+            line_number: 1,
+            description: 'Copper pipe',
+            product_name: 'Pipe 20mm',
+            purchases: [
+              purchase({
+                currency_code: 'IQD',
+                actual_unit_price: '18000',
+                review_original_qty: '10',
+                review_original_price: '12.5',
+                review_original_currency: 'USD',
+              }),
+            ],
+          },
+        ],
+      }),
+    )
+    expect(row('Pipe 20mm').textContent).toContain('was 12.5 USD')
+    expect(within(row('Pipe 20mm')).getByText('Changed')).toBeInTheDocument()
+  })
+
+  it('a purchase whose only change is its currency still counts as changed', () => {
+    show(
+      requisition({
+        lines: [
+          {
+            id: 'l1',
+            line_number: 1,
+            description: 'Copper pipe',
+            product_name: 'Pipe 20mm',
+            purchases: [purchase({ currency_code: 'IQD', review_original_currency: 'USD' })],
+          },
+        ],
+      }),
+    )
+    expect(within(row('Pipe 20mm')).getByText('Changed')).toBeInTheDocument()
+  })
+
   it('sends a new quantity alone, and both when both changed', () => {
     show()
     openEdit('Pipe 20mm')
@@ -673,7 +792,10 @@ describe('in Arabic', () => {
 })
 
 describe('every text the panel asks for exists in both languages', () => {
-  const src = fs.readFileSync(path.resolve(__dirname, '..', 'OrganizerReviewPanel.tsx'), 'utf8')
+  // The panel, and the dialog it opens to add an item (its texts are in the same group).
+  const src = ['OrganizerReviewPanel.tsx', 'AddReviewItemModal.tsx', 'TakeFromStockModal.tsx']
+    .map((f) => fs.readFileSync(path.resolve(__dirname, '..', f), 'utf8'))
+    .join('\n')
   const keys = [...src.matchAll(/t\('req\.review\.([A-Za-z0-9_]+)'/g)].map((m) => m[1])
   const load = (f: string) =>
     JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../i18n/locales', f), 'utf8')) as {
