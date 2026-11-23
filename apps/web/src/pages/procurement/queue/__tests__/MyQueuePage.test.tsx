@@ -167,9 +167,10 @@ describe('MyQueuePage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/procurement/purchase-orders/po-1')
   })
 
-  it('filters to items that need my approval (also the target of the old Approval Queue link)', async () => {
+  it('"needs my approval" lists requisitions only (also the target of the old Approval Queue link)', async () => {
     await wrap('/procurement/queue?filter=approval')
-    expect(screen.getByText('PO-2026-001')).toBeInTheDocument() // pending_approval
+    // PO-2026-001 is a purchase order in pending_approval; it is not a requisition, so it is not in this list
+    expect(screen.queryByText('PO-2026-001')).not.toBeInTheDocument()
     expect(screen.queryByText('PO-2026-002')).not.toBeInTheDocument()
     expect(screen.queryByText('REQ-2026-001')).not.toBeInTheDocument()
   })

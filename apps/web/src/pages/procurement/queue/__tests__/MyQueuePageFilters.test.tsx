@@ -113,7 +113,8 @@ describe('My Queue keeps its filters when an item is opened and the person comes
     expect(shown('REQ-B')).toBe(false)
     openAndComeBack()
     expect(shown('REQ-A')).toBe(true)
-    expect(shown('PO-A')).toBe(true)
+    // a purchase order waiting for approval is not listed here: the tile is for requisitions only
+    expect(shown('PO-A')).toBe(false)
     expect(shown('REQ-B')).toBe(false)
     expect(shown('PO-B')).toBe(false)
     expect(screen.getByRole('button', { name: /needs my approval/i })).toHaveAttribute(
