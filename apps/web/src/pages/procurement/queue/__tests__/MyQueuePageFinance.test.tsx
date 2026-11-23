@@ -185,29 +185,29 @@ describe('what Finance puts in the queue', () => {
 })
 
 describe('"Needs My Approval"', () => {
-  it('counts expense claims, advance requests and settlements, not only requisitions and POs', async () => {
+  it('counts requisitions only: no expense claim, advance, settlement or cash issue is in the tile', async () => {
     await renderPage()
     const tile = screen.getByRole('button', { name: /needs my approval/i })
-    // submitted claim, funding decision, pending advance, settlement. The advance awaiting cash is a payment, not a sign-off.
-    expect(tile).toHaveTextContent('4')
+    expect(tile).toHaveTextContent('0')
   })
 
-  it('shows them when the tile is pressed, and leaves out the advance waiting for cash', async () => {
+  it('shows none of them when the tile is pressed', async () => {
     await renderPage()
     fireEvent.click(screen.getByRole('button', { name: /needs my approval/i }))
-    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'SET-1'])
-      expect(shown(n)).toBe(true)
-    expect(shown('ADV-CASH')).toBe(false)
+    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'ADV-CASH', 'SET-1'])
+      expect(shown(n)).toBe(false)
   })
 
-  it('still lists the advance waiting for cash when nothing is filtered', async () => {
+  it('still lists every one of them when nothing is filtered', async () => {
     await renderPage()
-    expect(shown('ADV-CASH')).toBe(true)
+    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'ADV-CASH', 'SET-1'])
+      expect(shown(n)).toBe(true)
   })
 
-  it('shows them for the old Approval Queue link too', async () => {
+  it('shows none of them for the old Approval Queue link either', async () => {
     await renderPage('/procurement/queue?filter=approval')
-    expect(shown('ADV-PENDING') && shown('EXP-FUNDING')).toBe(true)
+    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'ADV-CASH', 'SET-1'])
+      expect(shown(n)).toBe(false)
   })
 })
 

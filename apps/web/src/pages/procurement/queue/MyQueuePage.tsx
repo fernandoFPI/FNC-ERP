@@ -335,7 +335,8 @@ export default function MyQueuePage() {
         role: roleLabel(action, p.organizer_id, currentUserId),
         updatedAt: p.updated_at,
         href: `/procurement/purchase-orders/${p.id}`,
-        needsApproval: p.status === 'pending_approval',
+        // "Needs My Approval" lists requisitions only.
+        needsApproval: false,
         priority: p.priority,
       })
     }
@@ -355,8 +356,8 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: c.created_at,
         href: `/finance/expense-claims/${c.id}`,
-        // Finance's funding decision is a sign-off that waits on this person too, so it counts as "needs my approval".
-        needsApproval: true,
+        // "Needs My Approval" lists requisitions only; expense claims stay in the queue, the overdue count and the action filter.
+        needsApproval: false,
         priority: null,
       })
     }
@@ -375,7 +376,8 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: a.created_at,
         href: `/finance/advances/${a.id}`,
-        needsApproval: true,
+        // Requisitions only under "Needs My Approval".
+        needsApproval: false,
         priority: null,
       })
     }
@@ -395,8 +397,7 @@ export default function MyQueuePage() {
         // waiting since the manager approved it
         updatedAt: a.approved_at ?? a.created_at,
         href: `/finance/advances/${a.id}`,
-        // The manager has already approved it; paying the cash out is a payment, not a sign-off, so it stays out of
-        // "Needs My Approval" (it is still in the queue, the overdue count and the action filter).
+        // Requisitions only under "Needs My Approval"; paying the cash out is a payment, not a sign-off.
         needsApproval: false,
         priority: null,
       })
@@ -416,7 +417,8 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: s.created_at,
         href: `/finance/advances/${s.advance_id}`,
-        needsApproval: true,
+        // Requisitions only under "Needs My Approval".
+        needsApproval: false,
         priority: null,
       })
     }
