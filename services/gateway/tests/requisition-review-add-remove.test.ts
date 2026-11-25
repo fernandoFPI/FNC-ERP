@@ -22,8 +22,8 @@ const EMP_PREFIX = 'ORVARTEST-EMP-'
 const SKU_PREFIX = 'ORVARTEST-SKU-'
 const LOC_PREFIX = 'ORVARTEST-LOC-'
 
-type Who = 'organizer' | 'buyer' | 'poadmin' | 'stranger' | 'admin' | 'foreignadmin'
-const WHO: Who[] = ['organizer', 'buyer', 'poadmin', 'stranger', 'admin', 'foreignadmin']
+type Who = 'organizer' | 'buyer' | 'poadmin' | 'keeper' | 'stranger' | 'admin' | 'foreignadmin'
+const WHO: Who[] = ['organizer', 'buyer', 'poadmin', 'keeper', 'stranger', 'admin', 'foreignadmin']
 const userIds = {} as Record<Who, string>
 let projectId: string
 let vendorA: string
@@ -51,6 +51,7 @@ const server = new ApolloServer<TestCtx>({ typeDefs, resolvers })
 
 type Mut = Record<string, (...a: unknown[]) => Promise<unknown>>
 const M = resolvers.Mutation as unknown as Mut
+const Q = resolvers.Query as unknown as Record<string, (...x: unknown[]) => Promise<unknown>>
 
 async function makeFile(companyId = COMPANY_ID, owner: Who = 'admin'): Promise<string> {
   const f = await pool.query<{ id: string }>(
@@ -199,7 +200,20 @@ const remove = (reqId: string, lineId: string, reason = 'Not needed any more', w
   M.removeReviewLine(null, { requisitionId: reqId, lineId, reason }, ctxFor(who))
 const confirm = (reqId: string, who: Who = 'organizer') => M.confirmReview(null, { requisitionId: reqId }, ctxFor(who))
 const submit = (reqId: string, who: Who = 'organizer') => M.submitReviewForApproval(null, { requisitionId: reqId }, ctxFor(who))
-const approveR = (reqId: string, who: Who = 'poadmin') => M.approveReview(null, { requisitionId: reqId }, ctxFor(who))
+// Items taken from stock in the review need the store keeper's sign-off first (migration 335): these tests are about the review's
+// changes, so an administrator signs the stock off, where there is any, before the PO Admin approves. The gate itself is tested in
+// requisition-review-store-keeper.test.ts.
+const signStock = async (reqId: string) => {
+  try {
+    await M.approveReviewStock(null, { requisitionId: reqId }, ctxFor('admin'))
+  } catch (e) {
+    if (!/No item was taken from stock/.test(e instanceof Error ? e.message : String(e))) throw e
+  }
+}
+const approveR = async (reqId: string, who: Who = 'poadmin') => {
+  await signStock(reqId)
+  return M.approveReview(null, { requisitionId: reqId }, ctxFor(who))
+}
 const rejectR = (reqId: string, reason: string, who: Who = 'poadmin') =>
   M.rejectReview(null, { requisitionId: reqId, reason }, ctxFor(who))
 const sendBack = (reqId: string, reason: string, who: Who = 'organizer') =>
@@ -302,6 +316,17 @@ beforeAll(async () => {
     `INSERT INTO po_position_assignments (company_id, employee_id, position, department_id, branch_id, is_active, assigned_by)
      VALUES ($1,$2,'po_admin',NULL,NULL,true,$3)`,
     [COMPANY_ID, emp.rows[0]!.id, userIds.admin],
+  )
+  // a company-wide store keeper (a plain user holding the store_keeper position)
+  const keeperEmp = await pool.query<{ id: string }>(
+    `INSERT INTO employees (company_id, user_id, first_name, last_name, hire_date, employee_number)
+     VALUES ($1,$2,'Keeper','Tester',CURRENT_DATE,$3) RETURNING id`,
+    [COMPANY_ID, userIds.keeper, `${EMP_PREFIX}keeper`],
+  )
+  await pool.query(
+    `INSERT INTO po_position_assignments (company_id, employee_id, position, department_id, branch_id, is_active, assigned_by)
+     VALUES ($1,$2,'store_keeper',NULL,NULL,true,$3)`,
+    [COMPANY_ID, keeperEmp.rows[0].id, userIds.admin],
   )
   projectId = (
     await pool.query<{ id: string }>(
@@ -864,8 +889,8 @@ describe('what happens to the changes along the way', () => {
     const b = await reachReview()
     await add(b.reqId, 'admin')
     await submit(b.reqId, 'admin')
-    // admin is not the organizer of this requisition, so another admin-level user may approve; the organizer may not
-    await expect(approveR(b.reqId, 'organizer')).rejects.toThrow(/never the requisition's organizer/)
+    // a plain organizer (neither admin nor PO Admin) cannot approve what was added in his own review; a PO Admin can
+    await expect(approveR(b.reqId, 'organizer')).rejects.toThrow(/PO Admin or an admin/)
     await approveR(b.reqId, 'poadmin')
     expect(await statusOf(b.reqId)).toBe('sourcing')
   })
@@ -982,6 +1007,224 @@ describe('taking part of a line from stock in the review', () => {
     await setStock(50, 0)
     return b
   }
+
+  // The store keeper's sign-off on items taken from stock (migration 335, playbook #123): the store keeper first, then the
+  // administrator. The store keeper cannot send the review back; the administrator has the final say.
+  describe('the store keeper signs off the items taken from stock before the administrator approves', () => {
+    const sk = (reqId: string) => ({ requisitionId: reqId })
+    const approveStock = (reqId: string, who: Who = 'keeper') => M.approveReviewStock(null, sk(reqId), ctxFor(who))
+    const rejectStock = (reqId: string, reason: string, who: Who = 'keeper') =>
+      M.rejectReviewStock(null, { requisitionId: reqId, reason }, ctxFor(who))
+    const approveReviewOnly = (reqId: string, who: Who = 'poadmin') =>
+      M.approveReview(null, { requisitionId: reqId }, ctxFor(who))
+    const stockRow = async (reqId: string) =>
+      (
+        await pool.query<{
+          stock_review_status: string | null
+          stock_review_by: string | null
+          stock_review_reason: string | null
+        }>(`SELECT stock_review_status, stock_review_by, stock_review_reason FROM requisitions WHERE id=$1`, [reqId])
+      ).rows[0]!
+    const readReview = async (reqId: string, who: Who) =>
+      (
+        (await Q.requisition(null, { id: reqId }, ctxFor(who))) as {
+          review: {
+            stock_review: { status: string; by_name: string | null; reason: string | null } | null
+            caller_can_decide_stock: boolean
+            caller_can_approve: boolean
+          }
+        }
+      ).review
+    // in the approval, with one item taken from stock
+    async function inApprovalWithStock(): Promise<Bought> {
+      const b = await reviewWithShortfall()
+      await take(b.reqId, b.lines[0]!, 4)
+      await submit(b.reqId)
+      return b
+    }
+
+    it('blocks the administrator until the store keeper has signed, and says why', async () => {
+      const b = await inApprovalWithStock()
+      await expect(approveReviewOnly(b.reqId)).rejects.toThrow(/store keeper has to approve the items taken from stock first/)
+      await expect(approveReviewOnly(b.reqId, 'admin')).rejects.toThrow(/store keeper has to approve/)
+      expect(await statusOf(b.reqId)).toBe('review_approval')
+      expect(await storeOutLines(b.reqId)).toHaveLength(0)
+    })
+
+    it('after the store keeper signs, the administrator approves, and only then the Store Out and the purchase orders exist', async () => {
+      const b = await inApprovalWithStock()
+      expect(await storeOutLines(b.reqId)).toHaveLength(0)
+      await approveStock(b.reqId)
+      // signing makes neither the Store Out nor a purchase order
+      expect(await storeOutLines(b.reqId)).toHaveLength(0)
+      expect(await statusOf(b.reqId)).toBe('review_approval')
+      expect((await stockRow(b.reqId)).stock_review_status).toBe('approved')
+      expect((await stockRow(b.reqId)).stock_review_by).toBe(userIds.keeper)
+      await approveReviewOnly(b.reqId)
+      expect(await statusOf(b.reqId)).toBe('sourcing')
+      expect(await storeOutLines(b.reqId)).toHaveLength(1)
+    })
+
+    it('a rejection by the store keeper keeps the reason in front of the administrator, who cannot approve over it', async () => {
+      const b = await inApprovalWithStock()
+      await rejectStock(b.reqId, '  Shelf A has only 2 left ')
+      const row = await stockRow(b.reqId)
+      expect(row.stock_review_status).toBe('rejected')
+      expect(row.stock_review_reason).toBe('Shelf A has only 2 left')
+      await expect(approveReviewOnly(b.reqId)).rejects.toThrow(/store keeper rejected the items taken from stock: Shelf A has only 2 left/)
+      // the status did not move: only the administrator sends it back
+      expect(await statusOf(b.reqId)).toBe('review_approval')
+      const r = await readReview(b.reqId, 'poadmin')
+      expect(r.stock_review?.status).toBe('rejected')
+      expect(r.stock_review?.reason).toBe('Shelf A has only 2 left')
+    })
+
+    it('the administrator has the final say: sends it back to the organizer, who resubmits, and the sign-off starts again', async () => {
+      const b = await inApprovalWithStock()
+      await approveStock(b.reqId)
+      await rejectR(b.reqId, 'Please redo the stock part')
+      expect(await statusOf(b.reqId)).toBe('organizer_review')
+      expect((await stockRow(b.reqId)).stock_review_status).toBeNull()
+      await submit(b.reqId)
+      await expect(approveReviewOnly(b.reqId)).rejects.toThrow(/store keeper has to approve/)
+      await approveStock(b.reqId)
+      await approveReviewOnly(b.reqId)
+      expect(await statusOf(b.reqId)).toBe('sourcing')
+    })
+
+    it('a sign-off left over from an earlier round never carries into a new submission', async () => {
+      const b = await reviewWithShortfall()
+      await take(b.reqId, b.lines[0]!, 4)
+      // as if an old decision had survived on the requisition while it was back with the organizer
+      await pool.query(`UPDATE requisitions SET stock_review_status='approved', stock_review_by=$2, stock_review_at=NOW() WHERE id=$1`, [
+        b.reqId,
+        userIds.keeper,
+      ])
+      await submit(b.reqId)
+      expect((await stockRow(b.reqId)).stock_review_status).toBeNull()
+      await expect(approveReviewOnly(b.reqId)).rejects.toThrow(/store keeper has to approve/)
+    })
+
+    it('a store keeper may change their mind before the administrator acts', async () => {
+      const b = await inApprovalWithStock()
+      await rejectStock(b.reqId, 'No')
+      await approveStock(b.reqId)
+      expect((await stockRow(b.reqId)).stock_review_status).toBe('approved')
+      expect((await stockRow(b.reqId)).stock_review_reason).toBeNull()
+    })
+
+    it('needs a reason to reject, and only a store keeper (or an admin) may decide', async () => {
+      const b = await inApprovalWithStock()
+      await expect(rejectStock(b.reqId, '   ')).rejects.toThrow(/reason is required/)
+      for (const who of ['stranger', 'buyer', 'organizer', 'poadmin'] as Who[]) {
+        await expect(approveStock(b.reqId, who)).rejects.toThrow(/store keeper of this requisition, or an admin/)
+        await expect(rejectStock(b.reqId, 'x', who)).rejects.toThrow(/store keeper of this requisition, or an admin/)
+      }
+      expect((await stockRow(b.reqId)).stock_review_status).toBeNull()
+      await approveStock(b.reqId, 'admin')
+      expect((await stockRow(b.reqId)).stock_review_status).toBe('approved')
+    })
+
+    it('only while it waits in Re-approval, and only when something was taken from stock', async () => {
+      const b = await reviewWithShortfall()
+      await take(b.reqId, b.lines[0]!, 4)
+      await expect(approveStock(b.reqId)).rejects.toThrow(/not waiting for a PO Admin/)
+      const none = await reachReview()
+      await editQty(none.purchases[0]!, 8)
+      await submit(none.reqId)
+      await expect(approveStock(none.reqId)).rejects.toThrow(/No item was taken from stock/)
+      // no stock, no gate: the administrator approves as before
+      await approveReviewOnly(none.reqId)
+      expect(await statusOf(none.reqId)).toBe('sourcing')
+    })
+
+    it('another company cannot find it', async () => {
+      const b = await inApprovalWithStock()
+      await expect(M.approveReviewStock(null, sk(b.reqId), ctxFor('foreignadmin', 'system_admin', OTHER_COMPANY_ID))).rejects.toThrow(
+        'Requisition not found',
+      )
+    })
+
+    it('says in the log who signed, and the page flags tell each person what they may do', async () => {
+      const b = await inApprovalWithStock()
+      const forKeeper = await readReview(b.reqId, 'keeper')
+      expect(forKeeper.caller_can_decide_stock).toBe(true)
+      expect(forKeeper.caller_can_approve).toBe(false)
+      expect(forKeeper.stock_review?.status).toBe('pending')
+      const forPoAdmin = await readReview(b.reqId, 'poadmin')
+      expect(forPoAdmin.caller_can_decide_stock).toBe(false)
+      expect(forPoAdmin.caller_can_approve).toBe(true)
+      expect((await readReview(b.reqId, 'stranger')).caller_can_decide_stock).toBe(false)
+      await approveStock(b.reqId)
+      expect(await logActions(b.reqId)).toContain('approve_stock_review')
+      const after = await readReview(b.reqId, 'poadmin')
+      expect(after.stock_review?.status).toBe('approved')
+      expect(after.stock_review?.by_name).toBeTruthy()
+    })
+
+    it('no stock taken: the review says nothing about a store keeper', async () => {
+      const b = await reachReview()
+      await editQty(b.purchases[0]!, 8)
+      await submit(b.reqId)
+      const r = await readReview(b.reqId, 'keeper')
+      expect(r.stock_review).toBeNull()
+      expect(r.caller_can_decide_stock).toBe(false)
+    })
+
+    it('asks the store keepers when it is submitted, and tells the administrators when the store keeper decides', async () => {
+      const b = await inApprovalWithStock()
+      const asked = await notices(b.reqId, 'REQ_REVIEW_STOCK_APPROVAL_REQUIRED')
+      expect(asked.map((n) => n.payload.userId)).toContain(userIds.keeper)
+      // the organizer who just submitted is not told about their own action
+      expect(asked.map((n) => n.payload.userId)).not.toContain(userIds.organizer)
+      await approveStock(b.reqId)
+      // a second notice, about the decision, reaches the administrators (the first, from the submission, does not mention it)
+      let told: string[] = []
+      for (let i = 0; i < 40 && told.length === 0; i++) {
+        told = (await notices(b.reqId, 'REQ_REVIEW_APPROVAL_REQUIRED'))
+          .map((n) => String(n.payload.body))
+          .filter((body) => /store keeper approved the items taken from stock/.test(body))
+        if (told.length === 0) await new Promise((r) => setTimeout(r, 100))
+      }
+      expect(told.length).toBeGreaterThan(0)
+    })
+
+    it('My Queue lists it for the store keeper until they have signed, and not for a stranger', async () => {
+      const b = await inApprovalWithStock()
+      const ids = async (who: Who) =>
+        ((await Q.myRequisitionApprovalQueue(null, {}, ctxFor(who))) as { id: string }[]).map((r) => r.id)
+      expect(await ids('keeper')).toContain(b.reqId)
+      expect(await ids('stranger')).not.toContain(b.reqId)
+      await approveStock(b.reqId)
+      expect(await ids('keeper')).not.toContain(b.reqId)
+      expect(await ids('poadmin')).toContain(b.reqId)
+    })
+
+    it('the real schema takes both mutations', async () => {
+      const b = await inApprovalWithStock()
+      const res = await server.executeOperation(
+        {
+          query: `mutation($id: ID!) { approveReviewStock(requisitionId: $id) { id status } }`,
+          variables: { id: b.reqId },
+        },
+        { contextValue: ctxFor('keeper') },
+      )
+      expect(res.body.kind).toBe('single')
+      if (res.body.kind !== 'single') return
+      expect(res.body.singleResult.errors).toBeUndefined()
+      const res2 = await server.executeOperation(
+        {
+          query: `mutation($id: ID!, $r: String!) { rejectReviewStock(requisitionId: $id, reason: $r) { id status } }`,
+          variables: { id: b.reqId, r: 'Changed my mind' },
+        },
+        { contextValue: ctxFor('keeper') },
+      )
+      expect(res2.body.kind).toBe('single')
+      if (res2.body.kind !== 'single') return
+      expect(res2.body.singleResult.errors).toBeUndefined()
+      expect((await stockRow(b.reqId)).stock_review_status).toBe('rejected')
+    })
+  })
 
   it('reserves the stock, marks the quantity on the line, counts as a change, and makes NO Store Out yet', async () => {
     const b = await reviewWithShortfall()
@@ -1146,5 +1389,503 @@ describe('taking part of a line from stock in the review', () => {
     await submit(b.reqId)
     await approveR(b.reqId)
     expect(await storeOutLines(b.reqId)).toHaveLength(1)
+  })
+
+  // "Use stock instead" (migration 333, playbook #118): a line that should come from stock rather than from what was bought.
+  describe('use stock instead of the purchases', () => {
+    const replace = (reqId: string, lineId: string, location = locationId, who: Who = 'organizer') =>
+      M.replaceReviewPurchasesWithStock(null, { requisitionId: reqId, lineId, sourceLocationId: location }, ctxFor(who))
+    const purchaseCount = async (lineId: string) =>
+      Number((await pool.query<{ c: string }>(`SELECT COUNT(*) AS c FROM po_line_purchases WHERE po_line_id=$1`, [lineId])).rows[0]!.c)
+    const replacedOf = async (lineId: string) =>
+      (await pool.query<{ review_replaced: { vendor: string; qty: string; price: string; currency: string; had_receipt: boolean }[] | null }>(`SELECT review_replaced FROM po_lines WHERE id=$1`, [lineId])).rows[0]!
+        .review_replaced
+
+    // Both lines bought for 10 at 12.50 USD; line 1 is a catalog item with 50 on the shelf.
+    async function reviewBought(): Promise<Bought> {
+      const b = await reachReview()
+      await pool.query(`UPDATE po_lines SET product_id=$2 WHERE id=$1`, [b.lines[0], productId])
+      await setStock(50, 0)
+      return b
+    }
+
+    it('removes the purchase and its receipt, reserves the whole quantity, and keeps what was bought for the approver', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      expect(await purchaseCount(b.lines[0]!)).toBe(0)
+      expect(
+        Number((await pool.query<{ c: string }>(`SELECT COUNT(*) AS c FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`, [b.purchases[0]])).rows[0]!.c),
+      ).toBe(0)
+      const l = await lineRow(b.lines[0]!)
+      expect(Number(l.qty_from_stock)).toBe(10)
+      expect(Number(l.review_stock_qty)).toBe(10)
+      expect(l.in_stock).toBe(true)
+      expect(Number(l.total_price)).toBe(0)
+      expect(l.source_location_id).toBe(locationId)
+      expect(await reservedAt()).toBe(10)
+      const kept = await replacedOf(b.lines[0]!)
+      expect(kept).toHaveLength(1)
+      expect(kept![0]).toMatchObject({ qty: '10.0000', currency: 'USD', had_receipt: true })
+      expect(Number(kept![0]!.price)).toBeCloseTo(12.5, 4)
+      expect(kept![0]!.vendor).toBeTruthy()
+      expect(await storeOutLines(b.reqId)).toHaveLength(0)
+      expect(await logActions(b.reqId)).toContain('review_used_stock_instead')
+      const r = await reviewOf(b.reqId)
+      expect(r.review!.needs_approval).toBe(true)
+      expect(r.review!.approval_reason).toContain('1 item was taken from stock')
+    })
+
+    it('keeps the replaced purchase in the review totals ("was"), so the approver still sees what the review started with', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      const res = await server.executeOperation(
+        {
+          query: `query($id: ID!) { requisition(id: $id) { review { totals { currency_code was now purchases } } } }`,
+          variables: { id: b.reqId },
+        },
+        { contextValue: ctxFor('organizer') },
+      )
+      const body = res.body as { kind: string; singleResult: { data?: { requisition: { review: { totals: { currency_code: string; was: string; now: string }[] } } }; errors?: unknown } }
+      expect(body.singleResult.errors).toBeUndefined()
+      const usd = body.singleResult.data!.requisition.review.totals.find((t) => t.currency_code === 'USD')!
+      expect(Number(usd.was)).toBeCloseTo(250, 2) // both purchases, as they were
+      expect(Number(usd.now)).toBeCloseTo(125, 2) // only line 2 is still bought
+    })
+
+    it('an edited purchase is kept as it was when the review began, not as he changed it', async () => {
+      const b = await reviewBought()
+      await M.editReviewPurchase(null, { purchaseId: b.purchases[0], qty: 8, actualUnitPrice: 13, currencyCode: 'EUR' }, ctxFor('organizer'))
+      await replace(b.reqId, b.lines[0]!)
+      const kept = await replacedOf(b.lines[0]!)
+      expect(Number(kept![0]!.qty)).toBe(10)
+      expect(kept![0]!.currency).toBe('USD')
+      expect(Number(kept![0]!.price)).toBeCloseTo(12.5, 4)
+    })
+
+    it('needs the PO Admin; approving makes one Store Out for the line and a purchase order for the line still bought', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve/)
+      await submit(b.reqId)
+      await approveR(b.reqId)
+      expect(await statusOf(b.reqId)).toBe('sourcing')
+      const outs = await storeOutLines(b.reqId)
+      expect(outs).toHaveLength(1)
+      expect(outs[0]!.po_line_id).toBe(b.lines[0])
+      expect(Number(outs[0]!.qty_issued)).toBe(10)
+      expect(
+        (await pool.query<{ id: string }>(`SELECT pl.id FROM po_lines pl JOIN purchase_orders po ON po.id=pl.po_id WHERE po.requisition_id=$1`, [b.reqId])).rows.map((r) => r.id),
+      ).toEqual([b.lines[1]])
+      expect(await reservedAt()).toBe(10)
+    })
+
+    it('clears a short mark the line carried (stock covers all of it now)', async () => {
+      const b = await reviewBought()
+      await pool.query(`UPDATE po_lines SET short_marked_at=NOW(), short_reason='test' WHERE id=$1`, [b.lines[0]])
+      await replace(b.reqId, b.lines[0]!)
+      expect((await pool.query<{ short_marked_at: string | null }>(`SELECT short_marked_at FROM po_lines WHERE id=$1`, [b.lines[0]])).rows[0]!.short_marked_at).toBeNull()
+    })
+
+    it('tells the buyers their purchase was replaced', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      const told = await notices(b.reqId, 'REQ_REVIEW_LINE_REMOVED')
+      expect(told.some((n) => n.payload.userId === userIds.buyer && String(n.payload.body).includes('from stock'))).toBe(true)
+    })
+
+    it('refuses a line with nothing bought on it (use Take from stock), a custom item and a virtual location, changing nothing', async () => {
+      const b = await reviewBought()
+      await expect(replace(b.reqId, b.lines[1]!)).rejects.toThrow(/no stock to use/) // line 2 is a custom item
+      await pool.query(`UPDATE po_lines SET product_id=$2 WHERE id=$1`, [b.lines[1], productId])
+      await pool.query(`DELETE FROM po_line_purchases WHERE id=$1`, [b.purchases[1]])
+      await expect(replace(b.reqId, b.lines[1]!)).rejects.toThrow(/Nothing was bought.*Take from stock/)
+      const virtual = (await pool.query<{ id: string }>(`SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' LIMIT 1`, [COMPANY_ID])).rows[0]
+      if (virtual) await expect(replace(b.reqId, b.lines[0]!, virtual.id)).rejects.toThrow(/virtual location/)
+      expect(await purchaseCount(b.lines[0]!)).toBe(1)
+      expect(await reservedAt()).toBe(0)
+    })
+
+    it('when the shelf cannot give the whole quantity nothing is removed: the purchase and its receipt stay', async () => {
+      const b = await reviewBought()
+      await setStock(8, 0)
+      await expect(replace(b.reqId, b.lines[0]!)).rejects.toThrow(/Insufficient available stock.*8 available/)
+      expect(await purchaseCount(b.lines[0]!)).toBe(1)
+      expect(
+        Number((await pool.query<{ c: string }>(`SELECT COUNT(*) AS c FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`, [b.purchases[0]])).rows[0]!.c),
+      ).toBe(1)
+      expect(await reservedAt()).toBe(0)
+      expect(await replacedOf(b.lines[0]!)).toBeNull()
+      expect((await lineRow(b.lines[0]!)).review_stock_qty).toBeNull()
+    })
+
+    it('refuses a second shelf for a line that already draws from one, and a line that already has a Store Out', async () => {
+      const b = await reviewBought()
+      await pool.query(`UPDATE po_lines SET qty_from_stock=2, source_location_id=$2 WHERE id=$1`, [b.lines[0], locationId])
+      await setStock(50, 2)
+      await setStock(50, 0, otherLocationId)
+      await expect(replace(b.reqId, b.lines[0]!, otherLocationId)).rejects.toThrow(/take the rest from the same one/)
+      expect(await reservedAt(otherLocationId)).toBe(0)
+      const number = `ORVARTEST-SO-${Math.random().toString(36).slice(2, 8)}`
+      const issue = (
+        await pool.query<{ id: string }>(
+          `INSERT INTO project_material_issues (project_id, company_id, requisition_id, issue_number, issue_date, status, created_by)
+           VALUES ($1,$2,$3,$4,CURRENT_DATE,'draft',$5) RETURNING id`,
+          [projectId, COMPANY_ID, b.reqId, number, userIds.admin],
+        )
+      ).rows[0]!.id
+      await pool.query(
+        `INSERT INTO project_material_issue_lines (issue_id, product_id, from_location_id, to_location_id, qty_issued, po_line_id) VALUES ($1,$2,$3,NULL,2,$4)`,
+        [issue, productId, locationId, b.lines[0]],
+      )
+      await expect(replace(b.reqId, b.lines[0]!)).rejects.toThrow(new RegExp(`already has a Store Out \\(${number}\\)`))
+      expect(await purchaseCount(b.lines[0]!)).toBe(1)
+    })
+
+    it('only the organizer or an admin, and only in the review', async () => {
+      const b = await reviewBought()
+      await expect(replace(b.reqId, b.lines[0]!, locationId, 'stranger')).rejects.toThrow(/organizer, or an admin/)
+      await expect(replace(b.reqId, b.lines[0]!, locationId, 'buyer')).rejects.toThrow(/organizer, or an admin/)
+      await sendBack(b.reqId, 'Check again')
+      await expect(replace(b.reqId, b.lines[0]!)).rejects.toThrow(/Organizer Review/)
+      expect(await purchaseCount(b.lines[0]!)).toBe(1)
+    })
+
+    it('Put back is refused for a replaced line (its purchases are gone, the buyers must buy it again)', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      // A line replaced with the current code has an undo entry, so Put back points at Undo instead.
+      await expect(putBack(b.reqId, b.lines[0]!)).rejects.toThrow(/undo that, which also puts the purchases back/)
+      // A line replaced before Undo existed has no entry: only its text summary is left, so the old advice stays.
+      await pool.query(`UPDATE po_lines SET review_stock_undo=NULL WHERE id=$1`, [b.lines[0]])
+      await expect(putBack(b.reqId, b.lines[0]!)).rejects.toThrow(/send the requisition back to Items Bought/)
+      expect(await reservedAt()).toBe(10)
+    })
+
+    it('removing the line afterwards releases the stock and keeps what was bought in the removed-line record', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      await remove(b.reqId, b.lines[0]!, 'Not needed after all')
+      expect(await reservedAt()).toBe(0)
+      const rows = await removedRows(b.reqId)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.purchases).toHaveLength(1)
+      expect(rows[0]!.purchases[0]!.currency).toBe('USD')
+    })
+
+    it('what he replaced stays through a send-back, and a requisition that was only partly replaced still forks the rest', async () => {
+      const b = await reviewBought()
+      await replace(b.reqId, b.lines[0]!)
+      await sendBack(b.reqId, 'Look again')
+      expect(Number((await lineRow(b.lines[0]!)).review_stock_qty)).toBe(10)
+      expect(await replacedOf(b.lines[0]!)).toHaveLength(1)
+    })
+  })
+
+  // Playbook #120 (migration 334): "Use stock instead" for only PART of a line, and Undo.
+  describe('part of a line from stock, and undo', () => {
+    const replacePart = (reqId: string, lineId: string, qty: number | null, location = locationId, who: Who = 'organizer') =>
+      M.replaceReviewPurchasesWithStock(null, { requisitionId: reqId, lineId, sourceLocationId: location, qty }, ctxFor(who))
+    const undo = (reqId: string, lineId: string, who: Who = 'organizer') =>
+      M.undoReviewStockInstead(null, { requisitionId: reqId, lineId }, ctxFor(who))
+    const purchasesOf = async (lineId: string) =>
+      (
+        await pool.query<{
+          id: string
+          qty: string
+          review_original_qty: string | null
+          receipt_attachment_id: string | null
+        }>(
+          `SELECT id, qty, review_original_qty, receipt_attachment_id FROM po_line_purchases WHERE po_line_id=$1 ORDER BY bought_at`,
+          [lineId],
+        )
+      ).rows
+    const receiptRows = async (purchaseId: string) =>
+      Number(
+        (await pool.query<{ c: string }>(`SELECT COUNT(*) AS c FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id=$1`, [purchaseId])).rows[0]!.c,
+      )
+    const lineState = async (lineId: string) =>
+      (
+        await pool.query<{
+          review_replaced: unknown[] | null
+          review_stock_undo: unknown[] | null
+          short_marked_at: string | null
+          review_stock_qty: string | null
+          qty_from_stock: string
+          in_stock: boolean
+          total_price: string
+          source_location_id: string | null
+        }>(
+          `SELECT review_replaced, review_stock_undo, short_marked_at, review_stock_qty, qty_from_stock, in_stock, total_price, source_location_id FROM po_lines WHERE id=$1`,
+          [lineId],
+        )
+      ).rows[0]!
+    const canUndoFlag = async (reqId: string, lineId: string): Promise<boolean | null> => {
+      const res = await server.executeOperation(
+        {
+          query: `query($id: ID!) { requisition(id: $id) { lines { id review_can_undo_stock } } }`,
+          variables: { id: reqId },
+        },
+        { contextValue: ctxFor('organizer') },
+      )
+      const body = res.body as { kind: string; singleResult: { data?: { requisition: { lines: { id: string; review_can_undo_stock: boolean | null }[] } }; errors?: unknown } }
+      expect(body.singleResult.errors).toBeUndefined()
+      return body.singleResult.data!.requisition.lines.find((l) => l.id === lineId)!.review_can_undo_stock
+    }
+    // A second purchase on the line, made a minute LATER than the first, from the same vendor.
+    const addPurchase = async (lineId: string, qty: number): Promise<string> =>
+      (
+        await pool.query<{ id: string }>(
+          `INSERT INTO po_line_purchases (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, bought_at)
+           SELECT po_line_id, vendor_id, currency_code, $2, actual_unit_price, bought_by, NOW() + interval '1 minute'
+             FROM po_line_purchases WHERE po_line_id=$1 ORDER BY bought_at LIMIT 1 RETURNING id`,
+          [lineId, qty],
+        )
+      ).rows[0]!.id
+
+    async function reviewBought(): Promise<Bought> {
+      const b = await reachReview()
+      await pool.query(`UPDATE po_lines SET product_id=$2 WHERE id=$1`, [b.lines[0], productId])
+      await setStock(50, 0)
+      return b
+    }
+
+    it('a smaller quantity takes it off the purchase, keeps the rest bought with its receipt, and reserves only that much', async () => {
+      const b = await reviewBought()
+      await replacePart(b.reqId, b.lines[0]!, 4)
+      const ps = await purchasesOf(b.lines[0]!)
+      expect(ps).toHaveLength(1)
+      expect(ps[0]!.id).toBe(b.purchases[0])
+      expect(Number(ps[0]!.qty)).toBe(6)
+      expect(Number(ps[0]!.review_original_qty)).toBe(10) // "was 10", like a Change
+      expect(await receiptRows(b.purchases[0]!)).toBe(1)
+      const l = await lineRow(b.lines[0]!)
+      expect(Number(l.qty_from_stock)).toBe(4)
+      expect(Number(l.review_stock_qty)).toBe(4)
+      expect(l.in_stock).toBe(false)
+      expect(Number(l.total_price)).toBeCloseTo(125, 2) // not zeroed: 6 are still bought
+      expect(l.source_location_id).toBe(locationId)
+      expect(await reservedAt()).toBe(4)
+      expect((await lineState(b.lines[0]!)).review_replaced).toBeNull() // nothing was removed
+      expect(await storeOutLines(b.reqId)).toHaveLength(0)
+      expect((await reviewOf(b.reqId)).review!.needs_approval).toBe(true)
+    })
+
+    it('takes it off the newest purchase first and removes a purchase nothing is left of', async () => {
+      const b = await reviewBought()
+      await pool.query(`UPDATE po_line_purchases SET qty=6 WHERE id=$1`, [b.purchases[0]])
+      const second = await addPurchase(b.lines[0]!, 4)
+      await replacePart(b.reqId, b.lines[0]!, 5)
+      const ps = await purchasesOf(b.lines[0]!)
+      expect(ps.map((p) => p.id)).toEqual([b.purchases[0]]) // the newest (4) is gone
+      expect(Number(ps[0]!.qty)).toBe(5) // and 1 came off the older one
+      expect((await lineState(b.lines[0]!)).review_replaced).toHaveLength(1)
+      expect(await receiptRows(second)).toBe(0)
+      expect(Number((await lineRow(b.lines[0]!)).qty_from_stock)).toBe(5)
+    })
+
+    it('what is not bought yet is covered first, so the purchase stays untouched', async () => {
+      const b = await reviewBought()
+      await pool.query(`UPDATE po_lines SET qty_ordered=12 WHERE id=$1`, [b.lines[0]])
+      await replacePart(b.reqId, b.lines[0]!, 2)
+      expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(10)
+      expect(Number((await lineRow(b.lines[0]!)).qty_from_stock)).toBe(2)
+      expect(await reservedAt()).toBe(2)
+    })
+
+    it('the whole remaining quantity (or none given) is the full replacement as before', async () => {
+      const b = await reviewBought()
+      await replacePart(b.reqId, b.lines[0]!, 10)
+      expect(await purchasesOf(b.lines[0]!)).toHaveLength(0)
+      expect(Number((await lineRow(b.lines[0]!)).qty_from_stock)).toBe(10)
+      expect((await lineRow(b.lines[0]!)).in_stock).toBe(true)
+      expect(await reservedAt()).toBe(10)
+    })
+
+    it('refuses zero, a negative number and more than is left to cover, changing nothing', async () => {
+      const b = await reviewBought()
+      await expect(replacePart(b.reqId, b.lines[0]!, 0)).rejects.toThrow(/greater than 0/)
+      await expect(replacePart(b.reqId, b.lines[0]!, -3)).rejects.toThrow(/greater than 0/)
+      await expect(replacePart(b.reqId, b.lines[0]!, 11)).rejects.toThrow(/Only 10.*too much/)
+      expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(10)
+      expect(await reservedAt()).toBe(0)
+      expect((await lineState(b.lines[0]!)).review_stock_undo).toBeNull()
+    })
+
+    it('the shelf must hold the part, and a failure leaves the purchase as it was', async () => {
+      const b = await reviewBought()
+      await setStock(3, 0)
+      await expect(replacePart(b.reqId, b.lines[0]!, 4)).rejects.toThrow(/Insufficient available stock.*3 available/)
+      expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(10)
+      expect(await reservedAt()).toBe(0)
+    })
+
+    it('Put back does not undo a part taken this way (it would leave the line under-covered); Undo does', async () => {
+      const b = await reviewBought()
+      await replacePart(b.reqId, b.lines[0]!, 4)
+      await expect(putBack(b.reqId, b.lines[0]!)).rejects.toThrow(/undo that, which also puts the purchases back/)
+      expect(await reservedAt()).toBe(4)
+    })
+
+    it('approving a part makes a Store Out for just that part and the PO for the rest', async () => {
+      const b = await reviewBought()
+      await replacePart(b.reqId, b.lines[0]!, 4)
+      await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve/)
+      await submit(b.reqId)
+      await approveR(b.reqId)
+      expect(await statusOf(b.reqId)).toBe('sourcing')
+      const outs = (await storeOutLines(b.reqId)).filter((o) => o.po_line_id === b.lines[0])
+      expect(outs.reduce((s, o) => s + Number(o.qty_issued), 0)).toBe(4)
+    })
+
+    describe('undo', () => {
+      it('puts a fully replaced purchase back whole: same row, same receipt, the line as it was, the reservation released', async () => {
+        const b = await reviewBought()
+        const before = await lineRow(b.lines[0]!)
+        const purchaseBefore = (await pool.query(`SELECT * FROM po_line_purchases WHERE id=$1`, [b.purchases[0]])).rows[0]!
+        await replacePart(b.reqId, b.lines[0]!, null)
+        expect(await canUndoFlag(b.reqId, b.lines[0]!)).toBe(true)
+        await undo(b.reqId, b.lines[0]!)
+        const ps = await purchasesOf(b.lines[0]!)
+        expect(ps.map((p) => p.id)).toEqual([b.purchases[0]])
+        const purchaseAfter = (await pool.query(`SELECT * FROM po_line_purchases WHERE id=$1`, [b.purchases[0]])).rows[0]!
+        expect(purchaseAfter).toEqual(purchaseBefore) // every column, vendor and receipt link included
+        expect(await receiptRows(b.purchases[0]!)).toBe(1)
+        expect(ps[0]!.receipt_attachment_id).not.toBeNull()
+        const l = await lineRow(b.lines[0]!)
+        expect(Number(l.qty_from_stock)).toBe(Number(before.qty_from_stock))
+        expect(l.in_stock).toBe(before.in_stock)
+        expect(Number(l.total_price)).toBe(Number(before.total_price))
+        expect(l.source_location_id).toBe(before.source_location_id)
+        const s = await lineState(b.lines[0]!)
+        expect(s.review_stock_qty).toBeNull()
+        expect(s.review_replaced).toBeNull()
+        expect(s.review_stock_undo).toBeNull()
+        expect(await reservedAt()).toBe(0)
+        expect(await canUndoFlag(b.reqId, b.lines[0]!)).toBe(false)
+        expect(await logActions(b.reqId)).toContain('review_stock_undone')
+        expect((await reviewOf(b.reqId)).review!.needs_approval).toBe(false) // nothing is changed any more
+      })
+
+      it('puts back what a partial take reduced and removed: quantities, "was" marks and the older purchase', async () => {
+        const b = await reviewBought()
+        await pool.query(`UPDATE po_line_purchases SET qty=6 WHERE id=$1`, [b.purchases[0]])
+        const second = await addPurchase(b.lines[0]!, 4)
+        await replacePart(b.reqId, b.lines[0]!, 5)
+        await undo(b.reqId, b.lines[0]!)
+        const ps = await purchasesOf(b.lines[0]!)
+        expect(ps.map((p) => p.id)).toEqual([b.purchases[0], second])
+        expect(ps.map((p) => Number(p.qty))).toEqual([6, 4])
+        expect(ps.every((p) => p.review_original_qty === null)).toBe(true)
+        expect(Number((await lineRow(b.lines[0]!)).qty_from_stock)).toBe(0)
+        expect(await reservedAt()).toBe(0)
+      })
+
+      it('an earlier edit of the purchase keeps its "was" mark through a part taken and undone', async () => {
+        const b = await reviewBought()
+        await editQty(b.purchases[0]!, 8) // was 10, now 8
+        await replacePart(b.reqId, b.lines[0]!, 3) // 2 were never bought (shortfall), so the purchase gives up only 1: 8 -> 7
+        const mid = (await purchasesOf(b.lines[0]!))[0]!
+        expect(Number(mid.qty)).toBe(7)
+        expect(Number(mid.review_original_qty)).toBe(10)
+        await undo(b.reqId, b.lines[0]!)
+        const p = (await purchasesOf(b.lines[0]!))[0]!
+        expect(Number(p.qty)).toBe(8)
+        expect(Number(p.review_original_qty)).toBe(10)
+      })
+
+      it('two operations stack: each Undo reverses the last one', async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, 4)
+        await replacePart(b.reqId, b.lines[0]!, 2)
+        expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(4)
+        expect(await reservedAt()).toBe(6)
+        await undo(b.reqId, b.lines[0]!)
+        expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(6)
+        expect(Number((await lineRow(b.lines[0]!)).review_stock_qty)).toBe(4)
+        expect(await reservedAt()).toBe(4)
+        expect(await canUndoFlag(b.reqId, b.lines[0]!)).toBe(true)
+        await undo(b.reqId, b.lines[0]!)
+        expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(10)
+        expect(await reservedAt()).toBe(0)
+        expect(await canUndoFlag(b.reqId, b.lines[0]!)).toBe(false)
+      })
+
+      it('after an undo the same line can take a different part, and the stock can be taken again', async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, null)
+        await undo(b.reqId, b.lines[0]!)
+        await replacePart(b.reqId, b.lines[0]!, 3)
+        expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(7)
+        expect(await reservedAt()).toBe(3)
+      })
+
+      it('is refused when a purchase on the line was changed after the stock was used, and nothing moves', async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, 4)
+        await editQty(b.purchases[0]!, 5)
+        await expect(undo(b.reqId, b.lines[0]!)).rejects.toThrow(/can't be undone: a purchase on the line was changed/)
+        expect(Number((await purchasesOf(b.lines[0]!))[0]!.qty)).toBe(5)
+        expect(await reservedAt()).toBe(4)
+      })
+
+      it('is refused when the quantity covered from stock was changed after it was used', async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, 4)
+        await pool.query(`UPDATE po_lines SET qty_from_stock=5 WHERE id=$1`, [b.lines[0]])
+        await expect(undo(b.reqId, b.lines[0]!)).rejects.toThrow(/quantity covered from stock was changed/)
+        expect(await reservedAt()).toBe(4)
+      })
+
+      it('is refused when a receipt file of a replaced purchase is gone, leaving the line as it is', async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, null)
+        const entry = (await lineState(b.lines[0]!)).review_stock_undo as { removed: { attachments: { file_id: string }[] }[] }[]
+        const fileId = entry[0]!.removed[0]!.attachments[0]!.file_id
+        await pool.query(`DELETE FROM files WHERE id=$1`, [fileId])
+        await expect(undo(b.reqId, b.lines[0]!)).rejects.toThrow(/receipt file of a replaced purchase is no longer available/)
+        expect(await purchasesOf(b.lines[0]!)).toHaveLength(0)
+        expect(await reservedAt()).toBe(10)
+      })
+
+      it('is refused with nothing to undo (never used, or replaced before Undo existed), once a Store Out exists, and for the wrong people or stage', async () => {
+        const b = await reviewBought()
+        await expect(undo(b.reqId, b.lines[0]!)).rejects.toThrow(/nothing to undo/)
+        await replacePart(b.reqId, b.lines[0]!, 4)
+        await expect(undo(b.reqId, b.lines[0]!, 'stranger')).rejects.toThrow(/organizer, or an admin/)
+        await expect(undo(b.reqId, b.lines[0]!, 'buyer')).rejects.toThrow(/organizer, or an admin/)
+        const number = `ORVARTEST-SO-${Math.random().toString(36).slice(2, 8)}`
+        const issue = (
+          await pool.query<{ id: string }>(
+            `INSERT INTO project_material_issues (project_id, company_id, requisition_id, issue_number, issue_date, status, created_by)
+             VALUES ($1,$2,$3,$4,CURRENT_DATE,'draft',$5) RETURNING id`,
+            [projectId, COMPANY_ID, b.reqId, number, userIds.admin],
+          )
+        ).rows[0]!.id
+        await pool.query(
+          `INSERT INTO project_material_issue_lines (issue_id, product_id, from_location_id, to_location_id, qty_issued, po_line_id) VALUES ($1,$2,$3,NULL,4,$4)`,
+          [issue, productId, locationId, b.lines[0]],
+        )
+        await expect(undo(b.reqId, b.lines[0]!)).rejects.toThrow(new RegExp(`already has a Store Out \\(${number}\\)`))
+        await pool.query(`DELETE FROM project_material_issue_lines WHERE issue_id=$1`, [issue])
+        await pool.query(`DELETE FROM project_material_issues WHERE id=$1`, [issue])
+        await sendBack(b.reqId, 'Check again')
+        await expect(undo(b.reqId, b.lines[0]!)).rejects.toThrow(/Organizer Review/)
+      })
+
+      it('a send-back clears what could be undone: the buyers record the purchases again', async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, null)
+        await sendBack(b.reqId, 'Look again')
+        expect((await lineState(b.lines[0]!)).review_stock_undo).toBeNull()
+        expect(await canUndoFlag(b.reqId, b.lines[0]!)).toBe(false)
+      })
+
+      it("another company's administrator cannot undo it", async () => {
+        const b = await reviewBought()
+        await replacePart(b.reqId, b.lines[0]!, null)
+        await expect(M.undoReviewStockInstead(null, { requisitionId: b.reqId, lineId: b.lines[0] }, foreign())).rejects.toThrow()
+        expect(await purchasesOf(b.lines[0]!)).toHaveLength(0)
+      })
+    })
   })
 })

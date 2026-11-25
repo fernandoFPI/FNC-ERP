@@ -22,8 +22,9 @@ export function canActOnReview(opts: {
 }
 
 /**
- * Who may approve or reject the changes: a PO Admin or a procurement admin, and never the organizer himself, so what he
- * changed is always looked at by somebody else. (An organizer who is also an admin needs another admin.)
+ * Who may approve or reject the changes: a PO Admin or a procurement admin. An organizer who is one of those may approve his
+ * own review (the user's decision, 2026-11-25: the earlier rule that sent it to somebody else is gone); an organizer who is
+ * neither still cannot, so the approval is never just the organizer's own say-so.
  */
 export function canApproveReview(opts: {
   callerId: string
@@ -31,7 +32,6 @@ export function canApproveReview(opts: {
   callerIsPoAdmin: boolean
   organizerId: string | null
 }): boolean {
-  if (opts.organizerId !== null && opts.organizerId === opts.callerId) return false
   return opts.callerIsAdmin || opts.callerIsPoAdmin
 }
 
@@ -139,4 +139,33 @@ export function settleLineQuantity(opts: { ordered: number; fromStock: number; b
   const eps = 0.0001
   if (covered > opts.ordered + eps) return { ordered: covered, short: false }
   return { ordered: opts.ordered, short: covered < opts.ordered - eps }
+}
+
+// ── The store keeper's sign-off on items taken from stock (migration 335, playbook #123) ─────────────────────────────────
+// While a requisition waits in Re-approval, a line the organizer took from stock needs the store keeper's approval before the
+// PO Admin / administrator may approve. The store keeper cannot send the review back: a "no" is a reason the administrator
+// reads, and the administrator, who has the final say, sends it back to the organizer.
+
+export type StockReviewStatus = 'pending' | 'approved' | 'rejected'
+
+/** The store keeper has something to sign off when the review took any item from stock. */
+export function reviewNeedsStoreKeeper(c: ReviewCounts): boolean {
+  return c.stocked > 0
+}
+
+/** The stored value (NULL until decided, and again after every new submission) as the status the page and the gate read. */
+export function stockReviewStatus(stored: string | null | undefined): StockReviewStatus {
+  return stored === 'approved' || stored === 'rejected' ? stored : 'pending'
+}
+
+/** Why the administrator may not approve yet, in words; null when nothing stands in the way. */
+export function stockGateReason(opts: {
+  needed: boolean
+  status: StockReviewStatus
+  reason?: string | null | undefined
+}): string | null {
+  if (!opts.needed || opts.status === 'approved') return null
+  if (opts.status === 'rejected')
+    return `The store keeper rejected the items taken from stock${opts.reason ? `: ${opts.reason}` : ''}. Send it back to the organizer`
+  return 'The store keeper has to approve the items taken from stock first'
 }

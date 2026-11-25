@@ -1847,6 +1847,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     case 'REQ_STALE_STOCK_COST':
     case 'REQ_REVIEW_REQUIRED':
     case 'REQ_REVIEW_APPROVAL_REQUIRED':
+    case 'REQ_REVIEW_STOCK_APPROVAL_REQUIRED':
     case 'REQ_APPROVAL_REQUIRED': {
       const reqRes = await pool.query<{
         company_id: string

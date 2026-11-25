@@ -296,12 +296,14 @@ describe('the rules in lib/requisitionReview.ts', () => {
     expect(canActOnReview({ callerId: 's', callerIsAdmin: false, organizerId: null })).toBe(false)
   })
 
-  it('lets a PO Admin or an admin approve, and never the organizer, even an organizer who is an admin', () => {
+  it('lets a PO Admin or an admin approve, the organizer too when he is one of them, but not an organizer who is neither', () => {
     const base = { organizerId: 'o' }
     expect(canApproveReview({ ...base, callerId: 'p', callerIsAdmin: false, callerIsPoAdmin: true })).toBe(true)
     expect(canApproveReview({ ...base, callerId: 'a', callerIsAdmin: true, callerIsPoAdmin: false })).toBe(true)
     expect(canApproveReview({ ...base, callerId: 's', callerIsAdmin: false, callerIsPoAdmin: false })).toBe(false)
-    expect(canApproveReview({ ...base, callerId: 'o', callerIsAdmin: true, callerIsPoAdmin: true })).toBe(false)
+    expect(canApproveReview({ ...base, callerId: 'o', callerIsAdmin: true, callerIsPoAdmin: false })).toBe(true)
+    expect(canApproveReview({ ...base, callerId: 'o', callerIsAdmin: false, callerIsPoAdmin: true })).toBe(true)
+    expect(canApproveReview({ ...base, callerId: 'o', callerIsAdmin: false, callerIsPoAdmin: false })).toBe(false)
   })
 
   it('needs a PO Admin for a change, for the organizer\'s own purchases and for a missing tolerance sign-off', () => {
@@ -491,7 +493,7 @@ describe('changing a purchase', () => {
     await expect(edit(b.purchases[0]!, 0)).rejects.toThrow(/greater than 0/)
     await expect(edit(b.purchases[0]!, undefined, -1)).rejects.toThrow(/greater than 0/)
     await expect(edit(b.purchases[0]!, 10, 12.5)).rejects.toThrow(/nothing to change/)
-    await expect(M.editReviewPurchase(null, { purchaseId: b.purchases[0] }, asAdmin('organizer'))).rejects.toThrow(/new quantity, a new price or a new currency/)
+    await expect(M.editReviewPurchase(null, { purchaseId: b.purchases[0] }, asAdmin('organizer'))).rejects.toThrow(/new quantity, a new price, a price after discount or a new currency/)
   })
 
   it('only the organizer or an admin may change it, and only in the review', async () => {
@@ -651,11 +653,11 @@ describe('the PO Admin decides', () => {
     expect(decided[0]!.payload.userId).toBe(userIds.organizer)
   })
 
-  it('an admin may approve too; the organizer never may, not even as an admin; a stranger may not; another company cannot find it', async () => {
+  it('an admin may approve too; an organizer who is neither admin nor PO Admin may not; a stranger may not; another company cannot find it', async () => {
     const b = await reachReview()
     await edit(b.purchases[0]!, undefined, 12.8)
     await submit(b.reqId)
-    await expect(M.approveReview(null, { requisitionId: b.reqId }, asAdmin('organizer'))).rejects.toThrow(/never the requisition's organizer/)
+    await expect(approveR(b.reqId, 'organizer')).rejects.toThrow(/PO Admin or an admin/)
     await expect(approveR(b.reqId, 'stranger')).rejects.toThrow(/PO Admin or an admin/)
     await expect(approveR(b.reqId, 'buyer')).rejects.toThrow(/PO Admin or an admin/)
     await expect(M.approveReview(null, { requisitionId: b.reqId }, foreign())).rejects.toThrow('Requisition not found')
@@ -664,13 +666,27 @@ describe('the PO Admin decides', () => {
     expect(await statusOf(b.reqId)).toBe('sourcing')
   })
 
+  it('an organizer who is an admin may approve (and send back) his own review', async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, undefined, 12.8, 'organizer')
+    await submit(b.reqId)
+    await M.approveReview(null, { requisitionId: b.reqId }, asAdmin('organizer'))
+    expect(await statusOf(b.reqId)).toBe('sourcing')
+    const again = await reachReview()
+    await edit(again.purchases[0]!, undefined, 12.8, 'organizer')
+    await submit(again.reqId)
+    await M.rejectReview(null, { requisitionId: again.reqId, reason: 'Checking again' }, asAdmin('organizer'))
+    expect(await statusOf(again.reqId)).toBe('organizer_review')
+  })
+
   it('approving signs off the over-tolerance purchase an edit brought back, together with creating the purchase orders', async () => {
     const b = await reachReview()
     await edit(b.purchases[0]!, undefined, 14)
     await expect(confirm(b.reqId)).rejects.toThrow(/PO Admin must approve this first \(1 purchase was changed; 1 over-tolerance/)
     await submit(b.reqId)
     await approveR(b.reqId)
-    const [p] = await purchasesOf(b.reqId)
+    // after the fork both purchases are on line 1 of their own purchase order, so find the edited one by id, not by position
+    const p = (await purchasesOf(b.reqId)).find((r) => r.id === b.purchases[0])
     expect(p!.over_tolerance).toBe(true)
     expect(p!.tolerance_approved_by).toBe(userIds.poadmin)
   })
@@ -787,7 +803,8 @@ describe('what the page reads', () => {
     const forOrganizer = (await Q.requisition(null, { id: b.reqId }, asAdmin('organizer'))) as {
       review: { caller_can_approve: boolean; caller_can_edit: boolean }
     }
-    expect(forOrganizer.review.caller_can_approve).toBe(false)
+    // an organizer who is an admin may approve his own review (2026-11-25), so the flag is true for him
+    expect(forOrganizer.review.caller_can_approve).toBe(true)
     // while a PO Admin holds it the organizer can no longer change anything (even as an admin)
     expect(forOrganizer.review.caller_can_edit).toBe(false)
 
@@ -841,6 +858,163 @@ describe('what the page reads', () => {
   })
 })
 
+describe('flagging lines when the approver sends the review back', () => {
+  const flagRow = async (lineId: string) =>
+    (
+      await pool.query<{
+        flag_reason: string | null
+        flagged_from_status: string | null
+        flagged_by: string | null
+        flag_addressed_at: string | null
+        flag_resolved_at: string | null
+      }>(
+        `SELECT flag_reason, flagged_from_status, flagged_by, flag_addressed_at, flag_resolved_at FROM po_lines WHERE id=$1`,
+        [lineId],
+      )
+    ).rows[0]!
+  const rejectWithFlags = (
+    reqId: string,
+    lineFlags: { lineId: string; reason: string }[] | null | undefined,
+    who: Who = 'poadmin',
+    reason = 'Please look again',
+  ) => M.rejectReview(null, { requisitionId: reqId, reason, lineFlags }, ctxFor(who))
+  const reachApproval = async () => {
+    const b = await reachReview()
+    await edit(b.purchases[0]!, undefined, 12.9)
+    await submit(b.reqId)
+    return b
+  }
+
+  it('records the flag on the line, who raised it and from which step, and sends the review back', async () => {
+    const b = await reachApproval()
+    await rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: '  Price is too high ' }])
+    expect(await statusOf(b.reqId)).toBe('organizer_review')
+    const f = await flagRow(b.lines[0]!)
+    expect(f.flag_reason).toBe('Price is too high')
+    expect(f.flagged_from_status).toBe('review_approval')
+    expect(f.flagged_by).toBe(userIds.poadmin)
+    expect(f.flag_addressed_at).toBeNull()
+    expect(f.flag_resolved_at).toBeNull()
+    // the line that was not flagged is untouched
+    expect((await flagRow(b.lines[1]!)).flag_reason).toBeNull()
+  })
+
+  it('works without any flag, as before (a rejection can be about the whole requisition)', async () => {
+    const b = await reachApproval()
+    await rejectWithFlags(b.reqId, null)
+    expect(await statusOf(b.reqId)).toBe('organizer_review')
+    expect((await flagRow(b.lines[0]!)).flag_reason).toBeNull()
+    const again = await reachApproval()
+    await rejectWithFlags(again.reqId, [])
+    expect(await statusOf(again.reqId)).toBe('organizer_review')
+  })
+
+  it('refuses a flag without a reason, or on a line of another requisition, and nothing changes', async () => {
+    const b = await reachApproval()
+    const other = await reachReview()
+    await expect(rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: '   ' }])).rejects.toThrow(
+      /needs a reason/,
+    )
+    await expect(rejectWithFlags(b.reqId, [{ lineId: other.lines[0]!, reason: 'Not mine' }])).rejects.toThrow(
+      /do not belong/,
+    )
+    // a good flag next to a bad one is not applied either (one transaction)
+    await expect(
+      rejectWithFlags(b.reqId, [
+        { lineId: b.lines[0]!, reason: 'Fine' },
+        { lineId: other.lines[0]!, reason: 'Not mine' },
+      ]),
+    ).rejects.toThrow(/do not belong/)
+    expect(await statusOf(b.reqId)).toBe('review_approval')
+    expect((await flagRow(b.lines[0]!)).flag_reason).toBeNull()
+    expect((await flagRow(other.lines[0]!)).flag_reason).toBeNull()
+  })
+
+  it('still needs a reason for the rejection itself, and only an approver may send flags', async () => {
+    const b = await reachApproval()
+    await expect(rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: 'x' }], 'poadmin', '  ')).rejects.toThrow(
+      /reason is required/,
+    )
+    await expect(rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: 'x' }], 'stranger')).rejects.toThrow(
+      /PO Admin or an admin/,
+    )
+    expect((await flagRow(b.lines[0]!)).flag_reason).toBeNull()
+    expect(await statusOf(b.reqId)).toBe('review_approval')
+  })
+
+  it('resubmitting answers the flags (addressed, not resolved)', async () => {
+    const b = await reachApproval()
+    await rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: 'Price is too high' }])
+    await edit(b.purchases[0]!, undefined, 12.6)
+    await submit(b.reqId)
+    const f = await flagRow(b.lines[0]!)
+    expect(f.flag_addressed_at).not.toBeNull()
+    expect(f.flag_resolved_at).toBeNull()
+  })
+
+  it('approving settles the flags of the review, so none hangs on a requisition in Sourcing', async () => {
+    const b = await reachApproval()
+    await rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: 'Price is too high' }])
+    await submit(b.reqId)
+    await approveR(b.reqId)
+    expect(await statusOf(b.reqId)).toBe('sourcing')
+    const f = await flagRow(b.lines[0]!)
+    expect(f.flag_resolved_at).not.toBeNull()
+  })
+
+  it('confirming alone settles them too (the organizer undid the change, so nobody has to approve)', async () => {
+    const b = await reachReview()
+    // flagged in an earlier round, then the organizer put everything back and confirms
+    await pool.query(
+      `UPDATE po_lines SET flag_reason='Old', flagged_at=NOW(), flagged_from_status='review_approval' WHERE id=$1`,
+      [b.lines[0]],
+    )
+    await confirm(b.reqId)
+    expect((await flagRow(b.lines[0]!)).flag_resolved_at).not.toBeNull()
+  })
+
+  it('leaves the flags of other steps alone', async () => {
+    const b = await reachReview()
+    await pool.query(
+      `UPDATE po_lines SET flag_reason='Verify', flagged_at=NOW(), flagged_from_status='price_verification' WHERE id=$1`,
+      [b.lines[0]],
+    )
+    await confirm(b.reqId)
+    expect((await flagRow(b.lines[0]!)).flag_resolved_at).toBeNull()
+  })
+
+  it('a PO Admin may confirm a review flag is fixed; a stranger may not', async () => {
+    const b = await reachApproval()
+    await rejectWithFlags(b.reqId, [{ lineId: b.lines[0]!, reason: 'Price is too high' }])
+    await expect(M.resolveLineFlag(null, { lineId: b.lines[0] }, ctxFor('stranger'))).rejects.toThrow(
+      /Not authorized/,
+    )
+    await M.resolveLineFlag(null, { lineId: b.lines[0] }, ctxFor('poadmin'))
+    expect((await flagRow(b.lines[0]!)).flag_resolved_at).not.toBeNull()
+  })
+
+  it('the real schema takes the optional flags and returns the requisition', async () => {
+    const b = await reachApproval()
+    const res = await server.executeOperation(
+      {
+        query: `mutation($id: ID!, $reason: String!, $flags: [LineFlagInput!]) {
+          rejectReview(requisitionId: $id, reason: $reason, lineFlags: $flags) { id status }
+        }`,
+        variables: { id: b.reqId, reason: 'Look again', flags: [{ lineId: b.lines[1], reason: 'Wrong vendor' }] },
+      },
+      { contextValue: ctxFor('poadmin') },
+    )
+    expect(res.body.kind).toBe('single')
+    if (res.body.kind !== 'single') return
+    expect(res.body.singleResult.errors).toBeUndefined()
+    const out = res.body.singleResult.data as { rejectReview: { status: string } }
+    expect(out.rejectReview.status).toBe('organizer_review')
+    const second = await flagRow(b.lines[1]!)
+    expect(second.flag_reason).toBe('Wrong vendor')
+    expect(second.flagged_from_status).toBe('review_approval')
+  })
+})
+
 describe('My Queue', () => {
   const queueIds = async (who: Who, role?: string) =>
     ((await Q.myRequisitionApprovalQueue(null, {}, role ? ctxFor(who, role) : ctxFor(who))) as { id: string }[]).map((r) => r.id)
@@ -853,14 +1027,14 @@ describe('My Queue', () => {
     expect(await queueIds('poadmin')).not.toContain(b.reqId)
   })
 
-  it('lists the approval for a PO Admin and the admins, never for the organizer himself, even an organizer who is an admin', async () => {
+  it('lists the approval for a PO Admin and the admins, the organizer too when he is an admin, but not a plain organizer', async () => {
     const b = await reachReview()
     await edit(b.purchases[0]!, undefined, 12.9)
     await submit(b.reqId)
     expect(await queueIds('poadmin')).toContain(b.reqId)
     expect(await queueIds('admin')).toContain(b.reqId)
     expect(await queueIds('organizer')).not.toContain(b.reqId)
-    expect(await queueIds('organizer', 'system_admin')).not.toContain(b.reqId)
+    expect(await queueIds('organizer', 'system_admin')).toContain(b.reqId)
     expect(await queueIds('stranger')).not.toContain(b.reqId)
   })
 
