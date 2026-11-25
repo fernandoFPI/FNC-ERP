@@ -17,7 +17,7 @@ export const REQUISITION_STATUSES = [
   { key: 'items_bought', label: 'Items bought', sequence: 7 },
   // The organizer double-checks what was bought before any purchase order exists (migration 329); a change needs a PO Admin.
   { key: 'organizer_review', label: 'Organizer review', sequence: 8 },
-  { key: 'review_approval', label: 'PO Admin approval', sequence: 9 },
+  { key: 'review_approval', label: 'Re-approval', sequence: 9 },
   { key: 'sourcing', label: 'Sourcing', sequence: 10 },
   { key: 'completed', label: 'Completed', sequence: 11 },
 ] as const

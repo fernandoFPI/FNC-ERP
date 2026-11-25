@@ -1235,7 +1235,7 @@ export interface MenuItem {
 
 // Row "⋮" menu — rendered in a portal so table overflow can't clip it. A real menu: it takes the keyboard when it opens (the arrow
 // keys, Home, End and Enter work, Escape and Tab close it and give the focus back), and each row is a menu item.
-export function RowMenu({ items }: { items: MenuItem[] }) {
+export function RowMenu({ items, ariaLabel }: { items: MenuItem[]; ariaLabel?: string }) {
   const { t } = useTranslation()
   const { theme, themeKey } = useTheme()
   const rtl = useIsRtl()
@@ -1273,7 +1273,7 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
       <button
         ref={btnRef}
         type="button"
-        aria-label={t('common.rowActions')}
+        aria-label={ariaLabel ?? t('common.rowActions')}
         aria-haspopup="menu"
         aria-expanded={pos !== null}
         aria-controls={pos ? menuId : undefined}
@@ -1315,7 +1315,7 @@ export function RowMenu({ items }: { items: MenuItem[] }) {
             ref={panelRef}
             id={menuId}
             role="menu"
-            aria-label={t('common.rowActions')}
+            aria-label={ariaLabel ?? t('common.rowActions')}
             onMouseDown={(e) => {
               e.stopPropagation()
             }}

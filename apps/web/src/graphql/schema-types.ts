@@ -123,6 +123,19 @@ export type ActivityResourceAssignment = {
   unitsPerDay: Scalars['Float']['output'];
 };
 
+export type AddReviewLineInput = {
+  actualUnitPrice: Scalars['Float']['input'];
+  currencyCode: Scalars['String']['input'];
+  description?: InputMaybe<Scalars['String']['input']>;
+  discountedUnitPrice?: InputMaybe<Scalars['Float']['input']>;
+  productId?: InputMaybe<Scalars['ID']['input']>;
+  qty: Scalars['Float']['input'];
+  receiptFileId: Scalars['ID']['input'];
+  requisitionId: Scalars['ID']['input'];
+  uom?: InputMaybe<Scalars['String']['input']>;
+  vendorId: Scalars['ID']['input'];
+};
+
 export type AnalyticAccount = {
   code: Scalars['String']['output'];
   id: Scalars['ID']['output'];
@@ -2375,6 +2388,7 @@ export type Mutation = {
   addProjectMember: ProjectMember;
   addProjectTeamMember: ProjectTeamMember;
   addPunchPhoto: PunchPhoto;
+  addReviewLine: Requisition;
   addRiskReview: Risk;
   addUserRole: UserRole;
   addVODrawing: VoDrawing;
@@ -2400,6 +2414,7 @@ export type Mutation = {
   approveRFQ: Project;
   approveRequisition: Requisition;
   approveReview: Requisition;
+  approveReviewStock: Requisition;
   approveStockIssuance: PurchaseOrder;
   approveTolerancePurchase: PoLinePurchase;
   approveVariationOrder: VariationOrder;
@@ -2622,6 +2637,7 @@ export type Mutation = {
   postJournalEntry: JournalEntry;
   postPayrollRun?: Maybe<PayrollRun>;
   processPayrollRun?: Maybe<PayrollRun>;
+  putBackReviewStock: Requisition;
   reachMilestone: ProjectMilestone;
   recalculateCPM: Scalars['Boolean']['output'];
   receiveStoreTransfer: StoreTransfer;
@@ -2651,6 +2667,7 @@ export type Mutation = {
   rejectRequisitionVerificationToMarketPricing: Requisition;
   rejectRequisitionVerificationToStorePricing: Requisition;
   rejectReview: Requisition;
+  rejectReviewStock: Requisition;
   rejectTolerancePurchase: Scalars['Boolean']['output'];
   rejectVariationOrder: VariationOrder;
   /** Explicitly release a lock you hold (navigating away, closing the editor, saving). */
@@ -2661,11 +2678,13 @@ export type Mutation = {
   removeProjectMember: Scalars['Boolean']['output'];
   removeProjectTeamMember: Scalars['Boolean']['output'];
   removeResourceAssignment: Scalars['Boolean']['output'];
+  removeReviewLine: Requisition;
   removeUserRole: Scalars['Boolean']['output'];
   removeVODrawing: Scalars['Boolean']['output'];
   reopenEngClientComment: EngClientComment;
   reopenPO: PurchaseOrder;
   reopenPunch: PunchItem;
+  replaceReviewPurchasesWithStock: Requisition;
   requestUploadUrl: UploadUrlPayload;
   resetRequisitionToDraft: Requisition;
   resetStuckEvents: Scalars['Int']['output'];
@@ -2730,10 +2749,12 @@ export type Mutation = {
   submitVariationOrder: VariationOrder;
   supervisorSignPunch: PunchItem;
   syncPOCommitments: Scalars['Boolean']['output'];
+  takeReviewLineFromStock: Requisition;
   terminateEmployee?: Maybe<Employee>;
   toggleRole: UserRole;
   triggerFXSync: Scalars['Boolean']['output'];
   unassignShift?: Maybe<Scalars['Boolean']['output']>;
+  undoReviewStockInstead: Requisition;
   unlockUser: UserDetail;
   updateAccount: Account;
   updateActivity: ProjectActivity;
@@ -2941,6 +2962,11 @@ export type MutationAddPunchPhotoArgs = {
 };
 
 
+export type MutationAddReviewLineArgs = {
+  input: AddReviewLineInput;
+};
+
+
 export type MutationAddRiskReviewArgs = {
   impact: Scalars['Int']['input'];
   notes?: InputMaybe<Scalars['String']['input']>;
@@ -3083,6 +3109,11 @@ export type MutationApproveRequisitionArgs = {
 
 
 export type MutationApproveReviewArgs = {
+  requisitionId: Scalars['ID']['input'];
+};
+
+
+export type MutationApproveReviewStockArgs = {
   requisitionId: Scalars['ID']['input'];
 };
 
@@ -4359,6 +4390,8 @@ export type MutationDismissPendingCatalogItemArgs = {
 
 export type MutationEditReviewPurchaseArgs = {
   actualUnitPrice?: InputMaybe<Scalars['Float']['input']>;
+  currencyCode?: InputMaybe<Scalars['String']['input']>;
+  discountedUnitPrice?: InputMaybe<Scalars['Float']['input']>;
   purchaseId: Scalars['ID']['input'];
   qty?: InputMaybe<Scalars['Float']['input']>;
 };
@@ -4528,6 +4561,12 @@ export type MutationPostPayrollRunArgs = {
 
 export type MutationProcessPayrollRunArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationPutBackReviewStockArgs = {
+  lineId: Scalars['ID']['input'];
+  requisitionId: Scalars['ID']['input'];
 };
 
 
@@ -4717,6 +4756,13 @@ export type MutationRejectRequisitionVerificationToStorePricingArgs = {
 
 
 export type MutationRejectReviewArgs = {
+  lineFlags?: InputMaybe<Array<LineFlagInput>>;
+  reason: Scalars['String']['input'];
+  requisitionId: Scalars['ID']['input'];
+};
+
+
+export type MutationRejectReviewStockArgs = {
   reason: Scalars['String']['input'];
   requisitionId: Scalars['ID']['input'];
 };
@@ -4772,6 +4818,13 @@ export type MutationRemoveResourceAssignmentArgs = {
 };
 
 
+export type MutationRemoveReviewLineArgs = {
+  lineId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  requisitionId: Scalars['ID']['input'];
+};
+
+
 export type MutationRemoveUserRoleArgs = {
   roleId: Scalars['ID']['input'];
 };
@@ -4794,6 +4847,14 @@ export type MutationReopenPoArgs = {
 
 export type MutationReopenPunchArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationReplaceReviewPurchasesWithStockArgs = {
+  lineId: Scalars['ID']['input'];
+  qty?: InputMaybe<Scalars['Float']['input']>;
+  requisitionId: Scalars['ID']['input'];
+  sourceLocationId: Scalars['ID']['input'];
 };
 
 
@@ -5181,6 +5242,14 @@ export type MutationSyncPoCommitmentsArgs = {
 };
 
 
+export type MutationTakeReviewLineFromStockArgs = {
+  lineId: Scalars['ID']['input'];
+  qty: Scalars['Float']['input'];
+  requisitionId: Scalars['ID']['input'];
+  sourceLocationId: Scalars['ID']['input'];
+};
+
+
 export type MutationTerminateEmployeeArgs = {
   id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
@@ -5196,6 +5265,12 @@ export type MutationToggleRoleArgs = {
 
 export type MutationUnassignShiftArgs = {
   employee_id: Scalars['ID']['input'];
+};
+
+
+export type MutationUndoReviewStockInsteadArgs = {
+  lineId: Scalars['ID']['input'];
+  requisitionId: Scalars['ID']['input'];
 };
 
 
@@ -6321,6 +6396,10 @@ export type PoLine = {
   qty_from_stock?: Maybe<Scalars['String']['output']>;
   qty_received?: Maybe<Scalars['String']['output']>;
   requested_currency_code?: Maybe<Scalars['String']['output']>;
+  review_added_at?: Maybe<Scalars['String']['output']>;
+  review_can_undo_stock?: Maybe<Scalars['Boolean']['output']>;
+  review_replaced?: Maybe<Array<RequisitionReviewRemovedPurchase>>;
+  review_stock_qty?: Maybe<Scalars['String']['output']>;
   short_marked_at?: Maybe<Scalars['String']['output']>;
   short_marked_by?: Maybe<Scalars['ID']['output']>;
   short_reason?: Maybe<Scalars['String']['output']>;
@@ -6390,6 +6469,7 @@ export type PoLinePurchase = {
   bought_by?: Maybe<Scalars['ID']['output']>;
   bought_by_name?: Maybe<Scalars['String']['output']>;
   currency_code: Scalars['String']['output'];
+  discounted_unit_price?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   over_tolerance: Scalars['Boolean']['output'];
   po_line_id: Scalars['ID']['output'];
@@ -6397,6 +6477,7 @@ export type PoLinePurchase = {
   receipt_attachment_id?: Maybe<Scalars['ID']['output']>;
   receipt_file_id?: Maybe<Scalars['ID']['output']>;
   receipt_filename?: Maybe<Scalars['String']['output']>;
+  review_original_currency?: Maybe<Scalars['String']['output']>;
   review_original_price?: Maybe<Scalars['String']['output']>;
   review_original_qty?: Maybe<Scalars['String']['output']>;
   tolerance_approved_by?: Maybe<Scalars['ID']['output']>;
@@ -9246,6 +9327,7 @@ export type RechargeRequestInput = {
 export type RecordLinePurchaseInput = {
   actualUnitPrice: Scalars['Float']['input'];
   currencyCode: Scalars['String']['input'];
+  discountedUnitPrice?: InputMaybe<Scalars['Float']['input']>;
   lineId: Scalars['ID']['input'];
   qty: Scalars['Float']['input'];
   receiptFileId?: InputMaybe<Scalars['ID']['input']>;
@@ -9423,13 +9505,19 @@ export type RequisitionPriceVerificationAdjustment = {
 };
 
 export type RequisitionReview = {
+  added_count: Scalars['Int']['output'];
   approval_reason?: Maybe<Scalars['String']['output']>;
   caller_can_approve: Scalars['Boolean']['output'];
+  caller_can_decide_stock: Scalars['Boolean']['output'];
   caller_can_edit: Scalars['Boolean']['output'];
   edited_count: Scalars['Int']['output'];
   last_rejection?: Maybe<RequisitionReviewRejection>;
   needs_approval: Scalars['Boolean']['output'];
   organizer_bought_count: Scalars['Int']['output'];
+  removed_count: Scalars['Int']['output'];
+  removed_lines: Array<RequisitionReviewRemovedLine>;
+  stock_review?: Maybe<RequisitionStockReview>;
+  stocked_count: Scalars['Int']['output'];
   totals: Array<RequisitionReviewTotal>;
   unsigned_tolerance_count: Scalars['Int']['output'];
 };
@@ -9440,11 +9528,42 @@ export type RequisitionReviewRejection = {
   reason?: Maybe<Scalars['String']['output']>;
 };
 
+export type RequisitionReviewRemovedLine = {
+  currency_code?: Maybe<Scalars['String']['output']>;
+  description?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  line_number?: Maybe<Scalars['Int']['output']>;
+  purchases: Array<RequisitionReviewRemovedPurchase>;
+  qty_from_stock?: Maybe<Scalars['String']['output']>;
+  qty_ordered?: Maybe<Scalars['String']['output']>;
+  reason: Scalars['String']['output'];
+  removed_at?: Maybe<Scalars['String']['output']>;
+  removed_by_name?: Maybe<Scalars['String']['output']>;
+  unit_price?: Maybe<Scalars['String']['output']>;
+  uom?: Maybe<Scalars['String']['output']>;
+};
+
+export type RequisitionReviewRemovedPurchase = {
+  bought_by?: Maybe<Scalars['String']['output']>;
+  currency?: Maybe<Scalars['String']['output']>;
+  had_receipt?: Maybe<Scalars['Boolean']['output']>;
+  price?: Maybe<Scalars['String']['output']>;
+  qty?: Maybe<Scalars['String']['output']>;
+  vendor?: Maybe<Scalars['String']['output']>;
+};
+
 export type RequisitionReviewTotal = {
   currency_code: Scalars['String']['output'];
   now: Scalars['String']['output'];
   purchases: Scalars['Int']['output'];
   was: Scalars['String']['output'];
+};
+
+export type RequisitionStockReview = {
+  at?: Maybe<Scalars['String']['output']>;
+  by_name?: Maybe<Scalars['String']['output']>;
+  reason?: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
 };
 
 export type RequisitionStorePriceInput = {

@@ -2,7 +2,7 @@
 // statuses and only then, its action bar is the LAST thing on the page (a sticky bar pins only at the end), the status reads in
 // words, and the Lines table still shows what was bought. The panel's own behaviour is in components/procurement/__tests__.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent, within, waitFor, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
 import i18n from '../../../../i18n'
@@ -49,7 +49,15 @@ const REVIEW = {
   totals: [{ currency_code: 'USD', was: '125', now: '125', purchases: 1 }],
 }
 
+// A test can change what the one line looks like (reset in beforeEach).
+let lineOver: Record<string, unknown> = {}
 function line() {
+  return {
+    ...lineBase(),
+    ...lineOver,
+  }
+}
+function lineBase() {
   return {
     id: 'line-1',
     line_number: 1,
@@ -158,6 +166,7 @@ async function open(status: string, review: unknown = REVIEW) {
 }
 
 beforeEach(() => {
+  lineOver = {}
   vi.clearAllMocks()
   localStorage.clear()
 })
@@ -190,7 +199,57 @@ describe('the requisition page in the organizer review', () => {
     expect(
       screen.getByRole('button', { name: 'Approve and create purchase orders' }),
     ).toBeInTheDocument()
-    expect(screen.getAllByText('PO Admin approval').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Re-approval').length).toBeGreaterThan(0)
+  })
+
+  describe('flagging lines for the organizer', () => {
+    const approver = {
+      ...REVIEW,
+      caller_can_edit: false,
+      caller_can_approve: true,
+      needs_approval: true,
+    }
+    const flagBoxes = () => screen.queryAllByRole('checkbox', { name: /flag this line/i })
+
+    it('the approver gets a tick box on every line, and a reason box once one is ticked', async () => {
+      await open('review_approval', approver)
+      const boxes = flagBoxes()
+      expect(boxes).toHaveLength(1)
+      fireEvent.click(boxes[0])
+      expect(flagBoxes()[0]).toBeChecked()
+      expect(screen.getByPlaceholderText('Say what the organizer has to fix')).toBeInTheDocument()
+    })
+
+    it('sends the ticked line and its reason with the send back', async () => {
+      await open('review_approval', approver)
+      fireEvent.click(flagBoxes()[0])
+      fireEvent.change(screen.getByPlaceholderText('Say what the organizer has to fix'), {
+        target: { value: 'Price looks wrong' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Send back to the organizer' }))
+      const dialog = screen.getByRole('dialog', { name: /Send the changes back to/ })
+      expect(within(dialog).getByTestId('review-reject-flags').textContent).toContain(
+        'Price looks wrong',
+      )
+      expect(within(dialog).getByRole('button', { name: 'Send back' })).toBeEnabled()
+    })
+
+    it('nobody else gets the boxes: the organizer in his review, and a viewer who cannot approve', async () => {
+      await open('organizer_review')
+      expect(flagBoxes()).toHaveLength(0)
+      cleanup()
+      await open('review_approval', {
+        ...REVIEW,
+        caller_can_edit: false,
+        caller_can_approve: false,
+      })
+      expect(flagBoxes()).toHaveLength(0)
+    })
+
+    it('the other stages keep their own tick box (price verification still flags)', async () => {
+      await open('price_verification', null)
+      expect(flagBoxes().length).toBeGreaterThan(0)
+    })
   })
 
   it.each(['draft', 'pending_approval', 'approved', 'items_bought', 'sourcing', 'completed'])(
@@ -214,16 +273,176 @@ describe('the requisition page in the organizer review', () => {
     expect(heading.compareDocumentPosition(logTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('keeps showing what was bought in the Lines table while the requisition is being reviewed', async () => {
+  it('is the Lines table that holds the review: one row per line with its purchase, Change, a status and a ⋯ menu', async () => {
     await open('organizer_review')
-    // the review table names the vendor on its own, and the Lines table's Bought column still reads "10 @ 12.5 USD — vendor"
-    // (that column is only drawn for the statuses its list names, so a missing status would empty it)
-    expect(screen.getByText('Al Noor Hardware')).toBeInTheDocument()
-    expect(screen.getByText(/^10 @ 12\.5 USD — Al Noor Hardware/)).toBeInTheDocument()
+    // there is no second table: the line's row carries the purchase (vendor, quantity, price) and what can be done to it
+    expect(screen.getAllByRole('table')).toHaveLength(1)
+    const row = screen.getByText('Pipe 2in').closest('tr')
+    if (!row) throw new Error('no row')
+    expect(row.textContent).toContain('10 @ 12.5 USD')
+    expect(row.textContent).toContain('Al Noor Hardware')
+    expect(within(row).getByRole('button', { name: 'Change' })).toBeInTheDocument()
+    expect(within(row).getByText('As bought')).toBeInTheDocument()
+    expect(
+      within(row).getByRole('button', { name: 'More actions for Pipe 2in' }),
+    ).toBeInTheDocument()
+    // what the status hides is one arrow away: the receipts, what changed
+    expect(within(row).queryByRole('button', { name: 'View' })).toBeNull()
+    fireEvent.click(within(row).getByRole('button', { name: 'Show details for Pipe 2in' }))
+    expect(screen.getByTestId('review-line-details').textContent).toContain(
+      '10 @ 12.5 USD = 125 USD',
+    )
+    // one way to the receipts on a desktop: the Receipts & photos window, not a View button per purchase
+    expect(screen.queryByRole('button', { name: 'View' })).toBeNull()
+  })
+
+  it('opens the ⋯ menu with the rare actions, and Remove item is one of them', async () => {
+    await open('organizer_review')
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Pipe 2in' }))
+    expect(screen.getByRole('menuitem', { name: 'Remove item' })).toBeInTheDocument()
+  })
+
+  it('says how many items there are above the table', async () => {
+    await open('organizer_review')
+    expect(screen.getByTestId('review-summary').textContent).toContain('Items: 1')
+  })
+
+  it('does not show the store-price double-check during the review (it belongs to the inventory check)', async () => {
+    lineOver = {
+      product_id: 'prod-1',
+      product_name: 'Pipe 2in',
+      qty_from_stock: '4',
+      cost_stale: true,
+      cost_age_days: 154,
+    }
+    await open('organizer_review')
+    expect(screen.queryByText('Double-check the store price')).toBeNull()
+    expect(screen.queryByTestId('stale-cost-tag')).toBeNull()
+  })
+
+  it('still shows the store-price double-check at the stages it belongs to (so the test above proves something)', async () => {
+    lineOver = {
+      product_id: 'prod-1',
+      product_name: 'Pipe 2in',
+      qty_from_stock: '4',
+      cost_stale: true,
+      cost_age_days: 154,
+    }
+    await open('sourcing')
+    expect(screen.getByText('Double-check the store price')).toBeInTheDocument()
+  })
+
+  describe('on a phone', () => {
+    const setWidth = (w: number) => {
+      Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true })
+    }
+    afterEach(() => {
+      setWidth(1024)
+    })
+
+    it('shows a compact card per line instead of the table, with the summary above and no Columns button', async () => {
+      setWidth(390)
+      await open('organizer_review')
+      expect(screen.queryByRole('table')).toBeNull()
+      expect(screen.getAllByTestId('review-line-card')).toHaveLength(1)
+      expect(screen.getByTestId('review-summary').textContent).toContain('Items: 1')
+      expect(screen.queryByRole('button', { name: /Columns/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Change' })).toBeNull()
+    })
+
+    it('a tap opens the sheet with Change, the details and the actions', async () => {
+      setWidth(390)
+      await open('organizer_review')
+      fireEvent.click(screen.getByRole('button', { name: 'Open Pipe 2in' }))
+      const sheet = within(screen.getByRole('dialog'))
+      expect(sheet.getByRole('button', { name: 'Change' })).toBeInTheDocument()
+      expect(sheet.getByTestId('review-line-details')).toBeInTheDocument()
+      expect(sheet.getByRole('button', { name: 'Remove item' })).toBeInTheDocument()
+    })
+
+    it('the Next step bar can be folded down to its title, in the review and in the approval', async () => {
+      setWidth(390)
+      const { unmount } = await open('organizer_review')
+      const bar = () => screen.getByRole('region', { name: /next step/i })
+      expect(within(bar()).getByRole('button', { name: /confirm|submit/i })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Fold this step away' }))
+      expect(within(bar()).queryByRole('button', { name: /confirm|submit/i })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Show this step' }))
+      expect(within(bar()).getByRole('button', { name: /confirm|submit/i })).toBeInTheDocument()
+      unmount()
+      await open('review_approval', {
+        ...REVIEW,
+        caller_can_edit: false,
+        caller_can_approve: true,
+        needs_approval: true,
+      })
+      expect(screen.getByRole('button', { name: 'Fold this step away' })).toBeInTheDocument()
+    })
+
+    it('every other stage keeps its own table on a phone', async () => {
+      setWidth(390)
+      await open('sourcing')
+      expect(screen.queryByTestId('review-line-card')).toBeNull()
+    })
+  })
+
+  it('shows what was bought in the Total column, not the estimate beside it', async () => {
+    lineOver = { total: '999' }
+    await open('organizer_review')
+    const row = screen.getByText('Pipe 2in').closest('tr')
+    if (!row) throw new Error('no row')
+    expect(row.textContent).toContain('125 USD')
+    expect(row.textContent).not.toContain('999')
+  })
+
+  it('keeps the estimate in the Total column once the review is over', async () => {
+    lineOver = { total: '999' }
+    await open('sourcing')
+    const row = screen.getByText('Pipe 2in').closest('tr')
+    if (!row) throw new Error('no row')
+    expect(row.textContent).toContain('999 USD')
+  })
+
+  it('lists what was removed behind a chip above the Lines table', async () => {
+    await open('organizer_review', {
+      ...REVIEW,
+      removed_lines: [
+        {
+          id: 'rm1',
+          description: 'Gas bottle',
+          qty_ordered: '1',
+          uom: 'No.',
+          reason: 'bought by mistake',
+          removed_by_name: 'Olivia',
+          purchases: [],
+        },
+      ],
+    })
+    expect(screen.queryByTestId('review-removed-lines')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Removed: 1/ }))
+    const box = screen.getByTestId('review-removed-lines')
+    expect(box.textContent).toContain('Gas bottle')
+    const row = screen.getByText('Pipe 2in').closest('tr')
+    if (!row) throw new Error('no row')
+    // the list is part of the summary above the table now, not a block under it
+    expect(row.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('shows the same row to someone who cannot edit: the status and its details, without Change or the menu', async () => {
+    await open('organizer_review', { ...REVIEW, caller_can_edit: false })
+    const row = screen.getByText('Pipe 2in').closest('tr')
+    if (!row) throw new Error('no row')
+    expect(row.textContent).toContain('10 @ 12.5 USD')
+    expect(within(row).queryByRole('button', { name: 'Change' })).toBeNull()
+    expect(within(row).queryByRole('button', { name: /More actions/ })).toBeNull()
+    expect(within(row).getByText('As bought')).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole('button', { name: 'Show details for Pipe 2in' }))
+    expect(screen.getByTestId('review-line-details')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
   })
 
   it.each(['organizer_review', 'review_approval'])(
-    'keeps every column of the earlier steps in the Lines table in %s (handled by, from stock, the three prices, bought)',
+    'keeps bought and the status column in %s, and starts without handled by, from stock, notes or the earlier pricing columns',
     async (status) => {
       await open(
         status,
@@ -231,6 +450,44 @@ describe('the requisition page in the organizer review', () => {
           ? { ...REVIEW, caller_can_edit: false, caller_can_approve: true }
           : REVIEW,
       )
+      const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
+      for (const h of ['Item', 'Qty', 'Bought', 'Status', 'Total']) expect(headers, h).toContain(h)
+      for (const h of [
+        'Handled by',
+        'From stock',
+        'Notes',
+        'Store price',
+        'Market price',
+        'Verified price',
+      ])
+        expect(headers, h).not.toContain(h)
+      // the Columns menu still offers every one of them, so one click brings them back
+      fireEvent.click(screen.getByRole('button', { name: /Columns/ }))
+      for (const h of [
+        'Handled by',
+        'From stock',
+        'Notes',
+        'Store price',
+        'Market price',
+        'Verified price',
+      ])
+        expect(screen.getAllByText(h).length, h).toBeGreaterThan(0)
+    },
+  )
+
+  it('shows the review column to the organizer and not the pricing ones, and cannot switch Bought or Review off', async () => {
+    await open('organizer_review')
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Columns/ }))
+    const boughtBox = screen.getByRole('checkbox', { name: /^Bought$/ })
+    expect(boughtBox).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: /^Status$/ })).toBeDisabled()
+  })
+
+  it.each(['items_bought', 'sourcing', 'completed'])(
+    'leaves the Lines table as it was in %s: every pricing column, plain purchases and no review column',
+    async (status) => {
+      await open(status)
       const headers = screen.getAllByRole('columnheader').map((h) => h.textContent)
       for (const h of [
         'Handled by',
@@ -241,8 +498,53 @@ describe('the requisition page in the organizer review', () => {
         'Bought',
       ])
         expect(headers, h).toContain(h)
+      expect(headers).not.toContain('Status')
+      expect(screen.getByText(/^10 @ 12.5 USD — Al Noor Hardware/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Change' })).toBeNull()
     },
   )
+
+  describe('the receipts window', () => {
+    const setWidth = (w: number) => {
+      Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true })
+    }
+    afterEach(() => {
+      setWidth(1024)
+    })
+
+    it.each(['organizer_review', 'review_approval'])(
+      'is offered beside the summary in %s, and opens the requisition viewer',
+      async (status) => {
+        const popup = vi
+          .spyOn(window, 'open')
+          // closed, so the next case opens its own window (an open one is brought forward, not opened again)
+          .mockReturnValue({ closed: true, focus: vi.fn() } as unknown as Window)
+        await open(status)
+        const button = screen.getByRole('button', { name: 'Receipts & photos ↗' })
+        const strip = screen.getByTestId('review-summary').parentElement
+        if (!strip) throw new Error('no strip')
+        expect(within(strip).getByRole('button', { name: 'Receipts & photos ↗' })).toBe(button)
+        fireEvent.click(button)
+        // the floating window is tried first (asynchronously); without one the pop-up opens
+        await waitFor(() => {
+          expect(popup).toHaveBeenCalledTimes(1)
+        })
+        expect(popup.mock.calls[0][0]).toBe('/viewer/requisitions/req-1/photos')
+        popup.mockRestore()
+      },
+    )
+
+    it('is not offered on a phone (it cannot float there)', async () => {
+      setWidth(390)
+      await open('organizer_review')
+      expect(screen.queryByRole('button', { name: 'Receipts & photos ↗' })).toBeNull()
+    })
+
+    it('is not offered once the review is over', async () => {
+      await open('sourcing', null)
+      expect(screen.queryByRole('button', { name: 'Receipts & photos ↗' })).toBeNull()
+    })
+  })
 
   it('offers no "Go to Items Bought" any more once the buying is finished', async () => {
     await open('organizer_review')

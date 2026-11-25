@@ -27,6 +27,12 @@ import {
 import { ATTACH_FILE } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
 import { lineHandlerName } from '../../../lib/lineHandler'
+import {
+  discountPercent,
+  discountProblem,
+  hasDiscount,
+  purchaseUnitPrice,
+} from '../../../lib/purchaseDiscount'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -100,6 +106,8 @@ interface Purchase {
   currency_code: string
   qty: string
   actual_unit_price: string
+  /** The unit price after the vendor's discount (migration 336); when set it is the price that counts. */
+  discounted_unit_price?: string | null
   bought_by?: string | null
   bought_by_name?: string | null
   bought_at: string
@@ -335,6 +343,9 @@ export default function ItemsBoughtPage() {
   const [globalVendorId, setGlobalVendorId] = useState('')
   const [purchaseQty, setPurchaseQty] = useState<Record<string, string>>({})
   const [purchasePrice, setPurchasePrice] = useState<Record<string, string>>({})
+  // The unit price AFTER the vendor's discount, per line; empty means no discount. When filled it is the price that counts
+  // (the total, the purchase order, the tolerance check) and the price above becomes information only.
+  const [purchaseDiscounted, setPurchaseDiscounted] = useState<Record<string, string>>({})
   const [purchaseCurrency, setPurchaseCurrency] = useState<Record<string, string>>({})
   const [pendingFiles, setPendingFiles] = useState<Record<string, File[]>>({})
   const [sameReceiptForAll, setSameReceiptForAll] = useState(false)
@@ -520,6 +531,20 @@ export default function ItemsBoughtPage() {
       addToast({ type: 'error', message: t('req.bought.actualPriceMustBeGreaterThan') })
       return false
     }
+    const discountText = purchaseDiscounted[lineId] ?? ''
+    const discountIssue = discountProblem(price, discountText)
+    if (discountIssue) {
+      addToast({
+        type: 'error',
+        message: t(
+          discountIssue === 'zero'
+            ? 'req.bought.discountedPriceMustBeGreaterThan0'
+            : 'req.bought.discountedPriceTooHigh',
+        ),
+      })
+      return false
+    }
+    const discountedPrice = discountText.trim() === '' ? null : parseFloat(discountText)
     if (files.length === 0) {
       addToast({ type: 'error', message: t('req.bought.attachAReceiptPhoto') })
       return false
@@ -560,6 +585,8 @@ export default function ItemsBoughtPage() {
             vendorId,
             qty,
             actualUnitPrice: price,
+            // Only when the buyer typed one: a purchase without a discount is sent exactly as before.
+            ...(discountedPrice === null ? {} : { discountedUnitPrice: discountedPrice }),
             currencyCode,
             receiptFileId: fileIds[0],
           },
@@ -588,6 +615,7 @@ export default function ItemsBoughtPage() {
       setSelectedVendor((prev) => ({ ...prev, [lineId]: sameVendorForAll ? globalVendorId : '' }))
       setPurchaseQty((prev) => ({ ...prev, [lineId]: '' }))
       setPurchasePrice((prev) => ({ ...prev, [lineId]: '' }))
+      setPurchaseDiscounted((prev) => ({ ...prev, [lineId]: '' }))
       // In "same receipt for all" mode, keep the shared files selected so
       // the next line can reuse them too — only clear the per-line ones
       // otherwise.
@@ -717,8 +745,22 @@ export default function ItemsBoughtPage() {
       : [currencyValue, ...CURRENCIES]
     const qtyNumber = parseFloat(qtyValue)
     const priceNumber = parseFloat(priceValue)
+    // The price after the vendor's discount: when it is typed and valid it is the price that counts, so the preview total
+    // uses it; the price above is then information only.
+    const discountText = purchaseDiscounted[line.id] ?? ''
+    const discountIssue = discountProblem(priceValue, discountText)
+    const discountedNumber =
+      discountText.trim() !== '' && discountIssue === null ? parseFloat(discountText) : null
     // Only a preview for the buyer; the server stores qty and price, never this product.
-    const previewTotal = qtyNumber * priceNumber
+    const previewTotal = qtyNumber * (discountedNumber ?? priceNumber)
+    // What the line under the discount box says: what is wrong, the saving once it is valid, or what the box is for.
+    let discountNote = t('req.bought.discountedPriceHint')
+    if (discountIssue === 'zero') discountNote = t('req.bought.discountedPriceMustBeGreaterThan0')
+    else if (discountIssue === 'high') discountNote = t('req.bought.discountedPriceTooHigh')
+    else if (discountedNumber !== null)
+      discountNote = t('req.bought.discountSaving', {
+        percent: fmtN(Math.round(discountPercent(priceNumber, discountedNumber) * 10) / 10),
+      })
     const files = pendingFiles[line.id] ?? []
     const vendorValue = selectedVendor[line.id] ?? ''
     const approvedPrice =
@@ -834,6 +876,34 @@ export default function ItemsBoughtPage() {
                   currencyAriaLabel={t('req.bought.currency')}
                   invalid={priceValue !== '' && !(priceNumber > 0)}
                 />
+              </div>
+            </div>
+            <div style={{ marginTop: '12px' }}>
+              <div style={fieldLabel}>{t('req.bought.discountedPrice')}</div>
+              <MoneyField
+                // Optional: empty means the vendor gave no discount. When filled it is the price that counts.
+                value={discountText}
+                onChange={(v) => {
+                  setPurchaseDiscounted((prev) => ({ ...prev, [line.id]: v }))
+                }}
+                ariaLabel={t('req.bought.discountedPrice')}
+                // The same currency as the price above: the pill only names it.
+                currency={currencyValue}
+                onCurrencyChange={(c) => {
+                  setPurchaseCurrency((prev) => ({ ...prev, [line.id]: c }))
+                }}
+                currencies={[currencyValue]}
+                currencyAriaLabel={t('req.bought.discountedCurrency')}
+                invalid={discountIssue !== null}
+              />
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: discountIssue !== null ? theme.danger : theme.textSecondary,
+                  marginTop: '6px',
+                }}
+              >
+                {discountNote}
               </div>
             </div>
             {previewTotal > 0 && (
@@ -1437,7 +1507,12 @@ export default function ItemsBoughtPage() {
                         {p.vendor_name ?? t('req.bought.vendor')}
                       </span>
                       <span style={{ color: theme.textSecondary }}>
-                        {fmtN(p.qty)} @ {fmtN(p.actual_unit_price)} {p.currency_code}
+                        {fmtN(p.qty)} @ {fmtN(purchaseUnitPrice(p))} {p.currency_code}
+                        {hasDiscount(p) && (
+                          <span data-testid="quoted-note" style={{ marginInlineStart: '6px' }}>
+                            {t('req.bought.quotedNote', { price: fmtN(p.actual_unit_price) })}
+                          </span>
+                        )}
                       </span>
                       <span style={{ color: theme.textSecondary }}>{p.bought_by_name ?? ''}</span>
                       <button

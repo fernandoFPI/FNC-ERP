@@ -241,12 +241,34 @@
     # record any purchase himself; otherwise submitReviewForApproval asks a PO Admin, who approveReview's (creating the
     # purchase orders) or rejectReview's (back to the organizer, with a reason). sendBackToBuying returns the requisition
     # to the buyers, optionally removing purchases so they are recorded again.
-    editReviewPurchase(purchaseId: ID!, qty: Float, actualUnitPrice: Float): POLinePurchase!
+    editReviewPurchase(purchaseId: ID!, qty: Float, actualUnitPrice: Float, discountedUnitPrice: Float, currencyCode: String): POLinePurchase!
     confirmReview(requisitionId: ID!): Requisition!
     submitReviewForApproval(requisitionId: ID!, notes: String): Requisition!
     approveReview(requisitionId: ID!): Requisition!
-    rejectReview(requisitionId: ID!, reason: String!): Requisition!
+    # lineFlags (optional): the lines the approver marks as the problem, each with its own reason, like the other reject
+    # mutations (migration 279). They show on those lines for the organizer, are marked addressed when he resubmits and
+    # are resolved when the review ends (confirmed or approved).
+    rejectReview(requisitionId: ID!, reason: String!, lineFlags: [LineFlagInput!]): Requisition!
+    # Migration 335: while it waits in Re-approval, items the organizer took from stock need the store keeper's sign-off before
+    # approveReview works. The store keeper cannot send the review back: a rejection is a reason the administrator reads.
+    approveReviewStock(requisitionId: ID!): Requisition!
+    rejectReviewStock(requisitionId: ID!, reason: String!): Requisition!
     sendBackToBuying(requisitionId: ID!, reason: String!, purchaseIds: [ID!]): Requisition!
+    # Migration 330: in organizer_review the organizer can also add an item that was bought and forgotten (the line and its
+    # purchase together, with the receipt) and remove a line with a reason. Both count as changes a PO Admin must approve.
+    addReviewLine(input: AddReviewLineInput!): Requisition!
+    removeReviewLine(requisitionId: ID!, lineId: ID!, reason: String!): Requisition!
+    # Migration 332: take the part of a line that was not bought from stock instead (it reserves the stock; the Store Out is
+    # made when the purchase orders are), and put it back. A PO Admin approves it with the other changes.
+    takeReviewLineFromStock(requisitionId: ID!, lineId: ID!, sourceLocationId: ID!, qty: Float!): Requisition!
+    putBackReviewStock(requisitionId: ID!, lineId: ID!): Requisition!
+    # Migration 333: the line should come from stock instead of from what was bought: its purchases and receipts are removed (kept on
+    # the line for the approver) and its whole remaining quantity is reserved from the shelf. A PO Admin approves it.
+    # Migration 334: qty is optional. Left out it is the whole remaining quantity; less covers only that much from stock and takes it
+    # off the purchases (newest first), so the rest stays bought.
+    replaceReviewPurchasesWithStock(requisitionId: ID!, lineId: ID!, sourceLocationId: ID!, qty: Float): Requisition!
+    # Reverses the last replaceReviewPurchasesWithStock on the line: the stock is put back and the purchases restored whole.
+    undoReviewStockInstead(requisitionId: ID!, lineId: ID!): Requisition!
 
     markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
     # Stock arrived (anywhere in the group, including the central warehouse)
@@ -2611,6 +2633,15 @@
     closed_at: String
     closed_reason: String
     closed_by: ID
+    # Set on a line the organizer added in the review (migration 330): it never went through the inventory check or the
+    # pricing steps, so a PO Admin signs it off. Null on every other line. Only filled by requisition(id).
+    review_added_at: String
+    # Organizer review (migration 332): the quantity he took from stock instead of buying it in this review; null when none.
+    review_stock_qty: String
+    # Migration 333: the purchases stock replaced on this line in the review, as they were; null when none.
+    review_replaced: [RequisitionReviewRemovedPurchase!]
+    # Migration 334: a "use stock instead" on this line can be undone (nullable, only filled by requisition(id)).
+    review_can_undo_stock: Boolean
     # Line-level review flag (migration 279) — distinct from audit_status
     # above (that's the separate finance_audit-stage mechanism). Set when a
     # price_verification/pending_approval reviewer rejects with this line
@@ -2646,6 +2677,9 @@
     currency_code: String!
     qty: String!
     actual_unit_price: String!
+    # The unit price AFTER the vendor's discount (migration 336). When set it is the price that counts everywhere; the
+    # quoted actual_unit_price then stays as information only. Null means no discount.
+    discounted_unit_price: String
     receipt_attachment_id: ID
     receipt_file_id: ID
     receipt_filename: String
@@ -2659,6 +2693,7 @@
     # it was not changed. Strings, like every exact decimal here.
     review_original_qty: String
     review_original_price: String
+    review_original_currency: String
   }
 
   input RecordLinePurchaseInput {
@@ -2666,6 +2701,7 @@
     vendorId: ID!
     qty: Float!
     actualUnitPrice: Float!
+    discountedUnitPrice: Float
     currencyCode: String!
     receiptFileId: ID
   }
@@ -2980,6 +3016,20 @@
   }
 
   # Everything the review page needs, decided on the server by the same functions the mutations use, so the page keeps no copy.
+  input AddReviewLineInput {
+    requisitionId: ID!
+    # Either a catalog product, or a description (or both: the description then names the line)
+    productId: ID
+    description: String
+    qty: Float!
+    uom: String
+    vendorId: ID!
+    actualUnitPrice: Float!
+    discountedUnitPrice: Float
+    currencyCode: String!
+    receiptFileId: ID!
+  }
+
   type RequisitionReview {
     # A PO Admin has to approve before any purchase order is created, and why
     needs_approval: Boolean!
@@ -2987,11 +3037,53 @@
     edited_count: Int!
     organizer_bought_count: Int!
     unsigned_tolerance_count: Int!
+    # Migration 330: lines added and removed in this review, and the removed ones as they were when removed
+    added_count: Int!
+    # lines he took part of from stock instead of buying it in this review (migration 332)
+    stocked_count: Int!
+    removed_count: Int!
+    removed_lines: [RequisitionReviewRemovedLine!]!
     # THE CALLER may edit, confirm, submit or send back (organizer_review), or approve / reject (review_approval)
     caller_can_edit: Boolean!
     caller_can_approve: Boolean!
+    # Migration 335: the store keeper's sign-off on items taken from stock (null when no item was taken from stock)
+    stock_review: RequisitionStockReview
+    # THE CALLER may sign off or reject the items taken from stock (a store keeper of this requisition, or an admin)
+    caller_can_decide_stock: Boolean!
     last_rejection: RequisitionReviewRejection
     totals: [RequisitionReviewTotal!]!
+  }
+
+  type RequisitionReviewRemovedLine {
+    id: ID!
+    line_number: Int
+    description: String
+    qty_ordered: String
+    qty_from_stock: String
+    uom: String
+    currency_code: String
+    unit_price: String
+    purchases: [RequisitionReviewRemovedPurchase!]!
+    reason: String!
+    removed_by_name: String
+    removed_at: String
+  }
+
+  type RequisitionReviewRemovedPurchase {
+    vendor: String
+    qty: String
+    price: String
+    currency: String
+    had_receipt: Boolean
+    bought_by: String
+  }
+
+  type RequisitionStockReview {
+    # pending | approved | rejected
+    status: String!
+    by_name: String
+    at: String
+    reason: String
   }
 
   type RequisitionReviewRejection {
