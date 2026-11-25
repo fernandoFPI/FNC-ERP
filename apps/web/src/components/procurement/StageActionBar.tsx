@@ -18,6 +18,13 @@ interface StageActionBarProps {
   more?: ReactNode
   /** The step's buttons. Leave out when the viewer has nothing to press (the bar then only explains). */
   children?: ReactNode
+  /** On a phone, give every button the whole row (long labels such as "Submit for re-approval" would be cut in half a row). */
+  stackButtonsOnPhone?: boolean
+  /**
+   * On a phone, an arrow in the title row folds the bar down to its title (the status, the info and the buttons are hidden until it
+   * is opened again), so a long step does not cover the lines. Opt-in; a desktop bar is never folded.
+   */
+  collapsible?: boolean
 }
 
 /** What the page reserves under its content while the phone bar floats over it, before the bar has been measured. */
@@ -32,11 +39,21 @@ const PHONE_SPACER_FALLBACK_PX = 120
  * On a phone it is kept small on purpose: the title, the one thing that blocks the step, and the buttons
  * side by side. The explanation is behind an info button (the bar used to take about a quarter of the screen).
  */
-export function StageActionBar({ title, hint, status, more, children }: StageActionBarProps) {
+export function StageActionBar({
+  title,
+  hint,
+  status,
+  more,
+  children,
+  stackButtonsOnPhone = false,
+  collapsible = false,
+}: StageActionBarProps) {
   const { t } = useTranslation()
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const [infoOpen, setInfoOpen] = useState(false)
+  const [folded, setFolded] = useState(false)
+  const isFolded = collapsible && folded
   const barRef = useRef<HTMLElement | null>(null)
   const [barHeight, setBarHeight] = useState(0)
 
@@ -54,7 +71,7 @@ export function StageActionBar({ title, hint, status, more, children }: StageAct
     return () => {
       observer.disconnect()
     }
-  }, [isPhone, infoOpen])
+  }, [isPhone, infoOpen, isFolded])
 
   const actions = children ? (
     <div
@@ -63,7 +80,9 @@ export function StageActionBar({ title, hint, status, more, children }: StageAct
           ? {
               display: 'grid',
               // Two buttons share the row; one button takes it all.
-              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gridTemplateColumns: stackButtonsOnPhone
+                ? 'minmax(0, 1fr)'
+                : 'repeat(auto-fit, minmax(150px, 1fr))',
               gap: '8px',
             }
           : {
@@ -110,9 +129,52 @@ export function StageActionBar({ title, hint, status, more, children }: StageAct
               <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>
                 {title}
               </div>
-              {status && <div style={{ marginTop: '4px' }}>{status}</div>}
+              {status && !isFolded && <div style={{ marginTop: '4px' }}>{status}</div>}
             </div>
-            {hasInfo && (
+            {collapsible && (
+              <button
+                type="button"
+                aria-label={t(isFolded ? 'req.detail.expandStep' : 'req.detail.collapseStep')}
+                aria-expanded={!isFolded}
+                onClick={() => {
+                  setFolded((f) => !f)
+                }}
+                style={{
+                  flexShrink: 0,
+                  width: '36px',
+                  height: '36px',
+                  margin: '-6px -6px 0 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: '999px',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  style={{
+                    transform: isFolded ? 'rotate(180deg)' : 'none',
+                    transition: 'transform 0.15s',
+                  }}
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+            )}
+            {hasInfo && !isFolded && (
               <button
                 type="button"
                 aria-label={t('req.detail.aboutThisStep')}
@@ -154,7 +216,7 @@ export function StageActionBar({ title, hint, status, more, children }: StageAct
               </button>
             )}
           </div>
-          {infoOpen && hasInfo && (
+          {infoOpen && hasInfo && !isFolded && (
             <div
               style={{
                 display: 'flex',
@@ -169,7 +231,7 @@ export function StageActionBar({ title, hint, status, more, children }: StageAct
               {more}
             </div>
           )}
-          {actions}
+          {!isFolded && actions}
         </section>
         {/* The fixed bar takes no room in the page; this keeps the last lines reachable above it. */}
         <div

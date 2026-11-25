@@ -14,6 +14,12 @@ vi.mock('../../../store/toastStore', () => ({
 const setWidth = (w: number) => {
   Object.defineProperty(window, 'innerWidth', { value: w, configurable: true, writable: true })
 }
+const renderRequisitionButton = (id = 'req-btn-1') =>
+  render(
+    <ThemeProvider>
+      <OpenPhotosButton requisitionId={id} />
+    </ThemeProvider>,
+  )
 const renderButton = (id = 'po-btn-1') =>
   render(
     <ThemeProvider>
@@ -47,6 +53,17 @@ describe('OpenPhotosButton', () => {
     expect(open.mock.calls[0][0]).toBe('/viewer/purchase-orders/po-btn-2/photos')
     expect(open.mock.calls[0][2]).toContain('popup=yes')
     expect(addToast).not.toHaveBeenCalled()
+  })
+
+  it('opens the requisition viewer when given a requisition (review stage: no purchase order yet)', () => {
+    const open = vi
+      .spyOn(window, 'open')
+      .mockReturnValue({ closed: false, focus: vi.fn() } as unknown as Window)
+    renderRequisitionButton('req-btn-2')
+    fireEvent.click(screen.getByRole('button', { name: 'Receipts & photos ↗' }))
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open.mock.calls[0][0]).toBe('/viewer/requisitions/req-btn-2/photos')
+    expect(open.mock.calls[0][1]).toBe('fnc-req-photos-req-btn-2')
   })
 
   it('on a phone opens a tab, because a phone has no windows to move', () => {

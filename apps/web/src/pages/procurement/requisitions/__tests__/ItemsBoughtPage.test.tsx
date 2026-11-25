@@ -1210,6 +1210,7 @@ describe('ItemsBoughtPage: the record-a-purchase card', () => {
         vendorId: string
         qty: number
         actualUnitPrice: number
+        discountedUnitPrice?: number
         currencyCode: string
         receiptFileId: string
       }
@@ -1732,6 +1733,157 @@ describe('ItemsBoughtPage: the record-a-purchase card', () => {
         await Promise.resolve()
       })
       expect(recordCalls).not.toHaveBeenCalled()
+    })
+  })
+
+  // The price after the vendor's discount (migration 336): optional, per unit, in the same currency as the price. When it is
+  // filled it is the price that counts (the total, the purchase order); the actual price above is information only.
+  describe('price after discount', () => {
+    const discount = () =>
+      screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Price after discount (optional)' })
+    const recordCash = async () => {
+      const { container } = await open()
+      fireEvent.click(within(card('line-1')).getByRole('button', { name: 'Cash' }))
+      attach(container)
+      return container
+    }
+    const clickRecord = () => {
+      fireEvent.click(within(card('line-1')).getByRole('button', { name: 'Record purchase' }))
+    }
+
+    it('is an empty, optional box under the price, in the same currency, with a line saying what it is for', async () => {
+      await open()
+      expect(discount().value).toBe('')
+      expect(
+        within(card('line-1')).getByText(
+          /If the vendor gave a discount, enter the unit price after it/,
+        ),
+      ).toBeInTheDocument()
+      const pill = screen.getByRole<HTMLSelectElement>('combobox', {
+        name: 'Currency of the price after discount',
+      })
+      expect(pill.value).toBe('IQD')
+      expect(Array.from(pill.options).map((o) => o.value)).toEqual(['IQD'])
+    })
+
+    it('a purchase with no discount is sent exactly as before: no discount key at all', async () => {
+      await recordCash()
+      clickRecord()
+      await waitFor(() => {
+        expect(recordCalls).toHaveBeenCalledTimes(1)
+      })
+      expect('discountedUnitPrice' in lastRecord()).toBe(false)
+      expect(lastRecord().actualUnitPrice).toBe(100)
+    })
+
+    it('a typed price after discount is sent next to the actual price, and the total follows the discounted one', async () => {
+      await recordCash()
+      fireEvent.change(price(), { target: { value: '105' } })
+      // 10 x 105 = 1,050 without a discount
+      expect(within(card('line-1')).getByText('1,050 IQD')).toBeInTheDocument()
+      fireEvent.change(discount(), { target: { value: '100' } })
+      // 10 x 100 = 1,000 with it: the actual price is information only
+      expect(within(card('line-1')).getByText('1,000 IQD')).toBeInTheDocument()
+      expect(within(card('line-1')).queryByText('1,050 IQD')).not.toBeInTheDocument()
+      clickRecord()
+      await waitFor(() => {
+        expect(recordCalls).toHaveBeenCalledTimes(1)
+      })
+      expect(lastRecord()).toMatchObject({
+        actualUnitPrice: 105,
+        discountedUnitPrice: 100,
+        qty: 10,
+      })
+    })
+
+    it('says how much it is off once a valid price after discount is typed', async () => {
+      await open()
+      fireEvent.change(discount(), { target: { value: '90' } })
+      expect(
+        within(card('line-1')).getByText(
+          '10% off the actual price. The price after discount counts toward the total.',
+        ),
+      ).toBeInTheDocument()
+    })
+
+    it('a price after discount above the actual price is marked, explained and never recorded', async () => {
+      await recordCash()
+      fireEvent.change(discount(), { target: { value: '120' } })
+      expect(discount()).toHaveAttribute('aria-invalid', 'true')
+      expect(
+        within(card('line-1')).getByText(
+          'The price after discount cannot be higher than the actual price',
+        ),
+      ).toBeInTheDocument()
+      // an invalid discount does not change the total either: it is still 10 x 100
+      expect(within(card('line-1')).getByText('1,000 IQD')).toBeInTheDocument()
+      clickRecord()
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(recordCalls).not.toHaveBeenCalled()
+    })
+
+    it('a price after discount of zero is marked, explained and never recorded', async () => {
+      await recordCash()
+      fireEvent.change(discount(), { target: { value: '0' } })
+      expect(discount()).toHaveAttribute('aria-invalid', 'true')
+      expect(
+        within(card('line-1')).getByText(
+          'The price after discount must be greater than 0 — clear the box if there is no discount',
+        ),
+      ).toBeInTheDocument()
+      clickRecord()
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(recordCalls).not.toHaveBeenCalled()
+    })
+
+    it('a discount equal to the actual price is accepted', async () => {
+      await recordCash()
+      fireEvent.change(discount(), { target: { value: '100' } })
+      expect(discount()).not.toHaveAttribute('aria-invalid', 'true')
+      clickRecord()
+      await waitFor(() => {
+        expect(recordCalls).toHaveBeenCalledTimes(1)
+      })
+      expect(lastRecord().discountedUnitPrice).toBe(100)
+    })
+
+    it('is emptied once the purchase is recorded, so the next one starts without a discount', async () => {
+      await recordCash()
+      fireEvent.change(discount(), { target: { value: '90' } })
+      clickRecord()
+      await waitFor(() => {
+        expect(recordCalls).toHaveBeenCalledTimes(1)
+      })
+      await waitFor(() => {
+        expect(discount().value).toBe('')
+      })
+    })
+
+    it('a recorded purchase shows the price that counts, with the quoted price beside it only when there was a discount', async () => {
+      mockReq([
+        baseLine({
+          id: 'line-1',
+          qty: '10',
+          purchases: [
+            {
+              ...purchase('p1', 'vendor-1', 'Al-Rasheed Hardware', '2026-01-01T00:00:00Z', '2'),
+              actual_unit_price: '100',
+              discounted_unit_price: '90',
+            },
+            purchase('p2', 'vendor-1', 'Al-Rasheed Hardware', '2026-01-02T00:00:00Z', '3'),
+          ],
+        }),
+      ])
+      await open()
+      expect(screen.getByText(/2 @ 90 IQD/)).toBeInTheDocument()
+      expect(screen.getByText(/3 @ 100 IQD/)).toBeInTheDocument()
+      const notes = screen.getAllByTestId('quoted-note')
+      expect(notes).toHaveLength(1)
+      expect(notes[0]).toHaveTextContent('(quoted 100)')
     })
   })
 

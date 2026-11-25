@@ -89,6 +89,9 @@ const PurchaseOrderForm = lazy(
   () => import('../pages/procurement/purchase-orders/PurchaseOrderForm'),
 )
 // The receipts-and-photos viewer: a bare window of its own (no sidebar), opened from a PO so it can sit on a second screen
+const RequisitionPhotoViewerPage = lazy(
+  () => import('../pages/procurement/requisitions/RequisitionPhotoViewerPage'),
+)
 const PoPhotoViewerPage = lazy(
   () => import('../pages/procurement/purchase-orders/PoPhotoViewerPage'),
 )
@@ -349,6 +352,12 @@ export const router = createBrowserRouter([
   {
     path: '/viewer/purchase-orders/:id/photos',
     element: <PrivateRoute>{withPerm('procurement.po.view', <PoPhotoViewerPage />)}</PrivateRoute>,
+  },
+  {
+    path: '/viewer/requisitions/:id/photos',
+    element: (
+      <PrivateRoute>{withPerm('procurement.po.view', <RequisitionPhotoViewerPage />)}</PrivateRoute>
+    ),
   },
   {
     path: '/complete-profile',

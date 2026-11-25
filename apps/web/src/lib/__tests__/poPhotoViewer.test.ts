@@ -8,6 +8,8 @@ import {
   popupFeatures,
   windowGeometry,
   openPoPhotoViewer,
+  openRequisitionPhotoViewer,
+  requisitionPhotoViewerPath,
   clampScale,
   stepScale,
   MIN_SCALE,
@@ -201,5 +203,55 @@ describe('zoom', () => {
     expect(stepScale(ZOOM_STEP, 'out')).toBeCloseTo(1)
     expect(stepScale(MAX_SCALE, 'in')).toBe(MAX_SCALE)
     expect(stepScale(MIN_SCALE, 'out')).toBe(MIN_SCALE)
+  })
+})
+
+describe('openRequisitionPhotoViewer', () => {
+  const fakeWindow = () =>
+    ({ closed: false, focus: vi.fn() }) as unknown as Window & { focus: ReturnType<typeof vi.fn> }
+
+  it('has its own address, outside the purchase order one', () => {
+    expect(requisitionPhotoViewerPath('req 1/x')).toBe('/viewer/requisitions/req%201%2Fx/photos')
+  })
+
+  it('opens the requisition viewer in a named popup window and brings it forward', () => {
+    const win = fakeWindow()
+    const open = vi.spyOn(window, 'open').mockReturnValue(win)
+    expect(openRequisitionPhotoViewer('req-open-1')).toBe(win)
+    const [url, name, features] = open.mock.calls[0]
+    expect(url).toBe('/viewer/requisitions/req-open-1/photos')
+    expect(name).toBe('fnc-req-photos-req-open-1')
+    expect(features).toContain('popup=yes')
+    expect(win.focus).toHaveBeenCalled()
+  })
+
+  it('brings an open window forward instead of opening a second one', () => {
+    const win = fakeWindow()
+    const open = vi.spyOn(window, 'open').mockReturnValue(win)
+    openRequisitionPhotoViewer('req-open-2')
+    expect(openRequisitionPhotoViewer('req-open-2')).toBe(win)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not share a window with a purchase order that happens to have the same id', () => {
+    const open = vi
+      .spyOn(window, 'open')
+      .mockReturnValueOnce(fakeWindow())
+      .mockReturnValueOnce(fakeWindow())
+    openPoPhotoViewer('same-id')
+    openRequisitionPhotoViewer('same-id')
+    expect(open).toHaveBeenCalledTimes(2)
+    expect(open.mock.calls[0][0]).toBe('/viewer/purchase-orders/same-id/photos')
+    expect(open.mock.calls[1][0]).toBe('/viewer/requisitions/same-id/photos')
+  })
+
+  it('returns null when the browser blocks it; on a phone it is a tab', () => {
+    const open = vi
+      .spyOn(window, 'open')
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(fakeWindow())
+    expect(openRequisitionPhotoViewer('req-open-3')).toBeNull()
+    openRequisitionPhotoViewer('req-open-3', { asTab: true })
+    expect(open.mock.calls[1]).toHaveLength(2)
   })
 })

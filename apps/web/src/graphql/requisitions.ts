@@ -65,6 +65,29 @@ export const REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY = gql`
   }
 `
 
+// The receipts window of a requisition in its organizer review (components/procurement/PoPhotoViewer.tsx): just the purchases,
+// whose receipts are read one by one as attachments of the purchase.
+export const REQUISITION_PHOTOS_QUERY = gql`
+  query RequisitionPhotos($id: ID!) {
+    requisition(id: $id) {
+      id
+      requisition_number
+      status
+      lines {
+        id
+        line_number
+        description
+        product_name
+        purchases {
+          id
+          vendor_name
+          qty
+        }
+      }
+    }
+  }
+`
+
 // G1 Phase 3 Milestone A screen 2 — RequisitionDetail. purchases is only
 // populated when a line is fetched via this query (see POLine.purchases'
 // schema comment) — it's the Items Bought record, read-only here (the
@@ -144,6 +167,15 @@ export const REQUISITION_QUERY = gql`
         closed_reason
         review_added_at
         review_stock_qty
+        review_can_undo_stock
+        review_replaced {
+          vendor
+          qty
+          price
+          currency
+          had_receipt
+          bought_by
+        }
         flag_reason
         flagged_at
         flagged_by_name
@@ -159,6 +191,7 @@ export const REQUISITION_QUERY = gql`
           currency_code
           qty
           actual_unit_price
+          discounted_unit_price
           bought_at
           bought_by
           bought_by_name
@@ -202,6 +235,14 @@ export const REQUISITION_QUERY = gql`
         }
         caller_can_edit
         caller_can_approve
+        # the store keeper's sign-off on items taken from stock (migration 335)
+        stock_review {
+          status
+          by_name
+          at
+          reason
+        }
+        caller_can_decide_stock
         last_rejection {
           reason
           by_name
@@ -554,6 +595,7 @@ export const REQUISITION_ITEMS_BOUGHT_QUERY = gql`
           currency_code
           qty
           actual_unit_price
+          discounted_unit_price
           bought_by
           bought_by_name
           bought_at
@@ -576,17 +618,20 @@ export const EDIT_REVIEW_PURCHASE = gql`
     $purchaseId: ID!
     $qty: Float
     $actualUnitPrice: Float
+    $discountedUnitPrice: Float
     $currencyCode: String
   ) {
     editReviewPurchase(
       purchaseId: $purchaseId
       qty: $qty
       actualUnitPrice: $actualUnitPrice
+      discountedUnitPrice: $discountedUnitPrice
       currencyCode: $currencyCode
     ) {
       id
       qty
       actual_unit_price
+      discounted_unit_price
       currency_code
       review_original_qty
       review_original_price
@@ -631,6 +676,37 @@ export const TAKE_REVIEW_LINE_FROM_STOCK = gql`
   }
 `
 
+// Migration 333: the line should come from stock instead of from what was bought: its purchases and receipts are removed (kept on the
+// line for the approver) and its whole remaining quantity is reserved from the shelf.
+export const REPLACE_REVIEW_PURCHASES_WITH_STOCK = gql`
+  mutation ReplaceReviewPurchasesWithStock(
+    $requisitionId: ID!
+    $lineId: ID!
+    $sourceLocationId: ID!
+    $qty: Float
+  ) {
+    replaceReviewPurchasesWithStock(
+      requisitionId: $requisitionId
+      lineId: $lineId
+      sourceLocationId: $sourceLocationId
+      qty: $qty
+    ) {
+      id
+      status
+    }
+  }
+`
+
+// Migration 334: reverses the last "use stock instead" on a line (the stock goes back, the purchases are restored whole).
+export const UNDO_REVIEW_STOCK_INSTEAD = gql`
+  mutation UndoReviewStockInstead($requisitionId: ID!, $lineId: ID!) {
+    undoReviewStockInstead(requisitionId: $requisitionId, lineId: $lineId) {
+      id
+      status
+    }
+  }
+`
+
 export const PUT_BACK_REVIEW_STOCK = gql`
   mutation PutBackReviewStock($requisitionId: ID!, $lineId: ID!) {
     putBackReviewStock(requisitionId: $requisitionId, lineId: $lineId) {
@@ -667,9 +743,27 @@ export const APPROVE_REVIEW = gql`
   }
 `
 
+export const APPROVE_REVIEW_STOCK = gql`
+  mutation ApproveReviewStock($requisitionId: ID!) {
+    approveReviewStock(requisitionId: $requisitionId) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_REVIEW_STOCK = gql`
+  mutation RejectReviewStock($requisitionId: ID!, $reason: String!) {
+    rejectReviewStock(requisitionId: $requisitionId, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
 export const REJECT_REVIEW = gql`
-  mutation RejectReview($requisitionId: ID!, $reason: String!) {
-    rejectReview(requisitionId: $requisitionId, reason: $reason) {
+  mutation RejectReview($requisitionId: ID!, $reason: String!, $lineFlags: [LineFlagInput!]) {
+    rejectReview(requisitionId: $requisitionId, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -695,6 +789,7 @@ export const RECORD_LINE_PURCHASE = gql`
       currency_code
       qty
       actual_unit_price
+      discounted_unit_price
       bought_by
       bought_by_name
       bought_at

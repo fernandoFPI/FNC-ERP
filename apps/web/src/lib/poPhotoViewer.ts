@@ -74,18 +74,41 @@ const open = new Map<string, Window>()
  * windows: it opens as a tab instead.
  */
 export function openPoPhotoViewer(poId: string, options: { asTab?: boolean } = {}): Window | null {
-  const existing = open.get(poId)
+  return openViewerWindow(poId, photoViewerPath(poId), `fnc-po-photos-${poId}`, options)
+}
+
+/** The same window for a requisition in its organizer review: the buyers' receipts, before any purchase order exists. */
+export const requisitionPhotoViewerPath = (requisitionId: string) =>
+  `/viewer/requisitions/${encodeURIComponent(requisitionId)}/photos`
+
+export function openRequisitionPhotoViewer(
+  requisitionId: string,
+  options: { asTab?: boolean } = {},
+): Window | null {
+  return openViewerWindow(
+    `req:${requisitionId}`,
+    requisitionPhotoViewerPath(requisitionId),
+    `fnc-req-photos-${requisitionId}`,
+    options,
+  )
+}
+
+function openViewerWindow(
+  key: string,
+  url: string,
+  name: string,
+  options: { asTab?: boolean },
+): Window | null {
+  const existing = open.get(key)
   if (existing && !existing.closed) {
     existing.focus()
     return existing
   }
-  const url = photoViewerPath(poId)
-  const name = `fnc-po-photos-${poId}`
   const win = options.asTab
     ? window.open(url, name)
     : window.open(url, name, popupFeatures(readViewerGeometry()))
   if (!win) return null
-  open.set(poId, win)
+  open.set(key, win)
   win.focus()
   return win
 }

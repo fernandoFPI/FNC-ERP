@@ -14,6 +14,7 @@ import { ADD_REVIEW_LINE } from '../../graphql/requisitions'
 import { PRODUCTS_QUERY } from '../../graphql/inventory'
 import { REQUEST_UPLOAD_URL, VENDORS_QUERY } from '../../graphql/procurement'
 import { uploadMimeType, uploadErrorDetail } from '../../lib/uploadMimeType'
+import { discountProblem } from '../../lib/purchaseDiscount'
 
 // Migration 330, playbook #116. In the organizer review he can add an item that was bought and forgotten: the line and its
 // purchase are created together, with the receipt. It skips the inventory check and the pricing steps, so the PO Admin's approval
@@ -62,6 +63,8 @@ export function AddReviewItemModal({
   const [uom, setUom] = useState('')
   const [vendorId, setVendorId] = useState('')
   const [price, setPrice] = useState('')
+  // The price after the vendor's discount: optional; when it is filled it is the price that counts.
+  const [discounted, setDiscounted] = useState('')
   const [currency, setCurrency] = useState(defaultCurrency ?? 'IQD')
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
@@ -114,6 +117,7 @@ export function AddReviewItemModal({
     setUom('')
     setVendorId('')
     setPrice('')
+    setDiscounted('')
     setCurrency(defaultCurrency ?? 'IQD')
     setFile(null)
   }
@@ -183,6 +187,17 @@ export function AddReviewItemModal({
       fail(t('req.review.addErrPrice'))
       return
     }
+    const discountIssue = discountProblem(unitPrice, discounted)
+    if (discountIssue) {
+      fail(
+        t(
+          discountIssue === 'zero'
+            ? 'req.review.discountMustBePositive'
+            : 'req.review.discountTooHigh',
+        ),
+      )
+      return
+    }
     if (!file) {
       fail(t('req.review.addErrReceipt'))
       return
@@ -211,6 +226,7 @@ export function AddReviewItemModal({
             uom: uom.trim() || undefined,
             vendorId,
             actualUnitPrice: unitPrice,
+            ...(discounted.trim() === '' ? {} : { discountedUnitPrice: parseFloat(discounted) }),
             currencyCode: currency,
             receiptFileId,
           },
@@ -321,6 +337,32 @@ export function AddReviewItemModal({
             currencies={CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES]}
             currencyAriaLabel={t('req.review.addCurrencyAria')}
           />
+        </div>
+        <div>
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 500,
+              color: theme.textSecondary,
+              marginBottom: '6px',
+            }}
+          >
+            {t('req.review.addDiscountLabel')}
+          </div>
+          <MoneyField
+            value={discounted}
+            onChange={setDiscounted}
+            ariaLabel={t('req.review.addDiscountLabel')}
+            // The discount is in the same currency as the price: the pill only names it.
+            currency={currency}
+            onCurrencyChange={setCurrency}
+            currencies={[currency]}
+            currencyAriaLabel={t('req.review.addDiscountCurrencyAria')}
+            invalid={discountProblem(price, discounted) !== null}
+          />
+          <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '6px' }}>
+            {t('req.review.addDiscountHint')}
+          </div>
         </div>
         <div>
           <div

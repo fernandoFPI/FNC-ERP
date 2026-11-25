@@ -516,3 +516,79 @@ describe('in Arabic', () => {
     expect(screen.getByText('إضافة صنف تم شراؤه')).toBeInTheDocument()
   })
 })
+
+// The price after the vendor's discount (migration 336, playbook #124): optional, per unit, in the price's own currency; when it
+// is filled it is the price that counts, so the line is added at that price with the quoted one kept as information.
+describe('price after discount', () => {
+  const discountBox = () => screen.getByLabelText('Price after discount (optional)')
+  const input = () => callArg('AddReviewLine').variables.input as Record<string, unknown>
+
+  it('is an optional box under the price, in the same currency, with a line saying what it is for', () => {
+    show()
+    expect(discountBox()).toHaveValue(null)
+    expect(
+      screen.getByText(/If the vendor gave a discount, enter the unit price after it/),
+    ).toBeInTheDocument()
+    const pill = screen.getByLabelText('Currency of the price after discount')
+    expect(pill).toHaveValue('USD')
+    expect(Array.from(pill.querySelectorAll('option')).map((o) => o.textContent)).toEqual(['USD'])
+  })
+
+  it('an item added without a discount is sent exactly as before: no discount key', async () => {
+    show()
+    fillAll()
+    save()
+    await waitFor(() => {
+      expect(onAdded).toHaveBeenCalled()
+    })
+    expect('discountedUnitPrice' in input()).toBe(false)
+  })
+
+  it('a typed price after discount is sent next to the quoted price', async () => {
+    show()
+    fillAll({ price: '7.25' })
+    fireEvent.change(discountBox(), { target: { value: '6' } })
+    save()
+    await waitFor(() => {
+      expect(onAdded).toHaveBeenCalled()
+    })
+    expect(input()).toMatchObject({ actualUnitPrice: 7.25, discountedUnitPrice: 6, qty: 4 })
+  })
+
+  it('a price after discount above the price is marked and refused before anything is sent', () => {
+    show()
+    fillAll({ price: '7.25' })
+    fireEvent.change(discountBox(), { target: { value: '9' } })
+    expect(discountBox()).toHaveAttribute('aria-invalid', 'true')
+    save()
+    expect(addToast).toHaveBeenCalledWith({
+      message: 'The price after discount cannot be higher than the price the vendor quoted',
+      type: 'error',
+    })
+    expect(mutationFns.RequestUploadUrl).not.toHaveBeenCalled()
+    expect(mutationFns.AddReviewLine).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('a price after discount of zero is refused before anything is sent', () => {
+    show()
+    fillAll()
+    fireEvent.change(discountBox(), { target: { value: '0' } })
+    save()
+    expect(addToast).toHaveBeenCalledWith({
+      message:
+        'The price after discount must be greater than 0 — clear the box if there is no discount',
+      type: 'error',
+    })
+    expect(mutationFns.AddReviewLine).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('is emptied when the dialog is closed, so the next item starts without a discount', () => {
+    show()
+    fireEvent.change(discountBox(), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onClose).toHaveBeenCalled()
+    expect(discountBox()).toHaveValue(null)
+  })
+})

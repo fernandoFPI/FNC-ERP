@@ -149,3 +149,89 @@ describe('StageActionBar', () => {
     expect(container.querySelector('[aria-hidden="true"]')).toBeNull()
   })
 })
+
+describe('stackButtonsOnPhone', () => {
+  it('gives every button the whole row on a phone, so a long label is not cut', () => {
+    setWidth(390)
+    show({ stackButtonsOnPhone: true })
+    const buttons = within(bar()).getByRole('button', { name: 'Submit' }).parentElement
+    if (!buttons) throw new Error('the buttons area was not found')
+    expect(buttons.style.display).toBe('grid')
+    expect(buttons.style.gridTemplateColumns).toBe('minmax(0, 1fr)')
+  })
+
+  it('changes nothing on a desktop or when it is not asked for', () => {
+    show({ stackButtonsOnPhone: true })
+    const desktop = within(bar()).getByRole('button', { name: 'Submit' }).parentElement
+    expect(desktop?.style.display).toBe('flex')
+  })
+})
+
+// A long step (the organizer review's "your review" bar) folds down to its title on a phone, so it does not cover the lines.
+describe('collapsible', () => {
+  const fold = () => screen.getByRole('button', { name: 'Fold this step away' })
+  const unfold = () => screen.getByRole('button', { name: 'Show this step' })
+
+  it('on a phone shows an arrow in the title row, open to begin with, and the buttons are there', () => {
+    setWidth(390)
+    show({ collapsible: true, status: <span>One purchase was changed</span> })
+    expect(fold()).toHaveAttribute('aria-expanded', 'true')
+    expect(within(bar()).getByRole('button', { name: 'Submit' })).toBeInTheDocument()
+    expect(within(bar()).getByText('One purchase was changed')).toBeInTheDocument()
+  })
+
+  it('folding keeps only the title and the arrow: no status, no info button, no buttons', () => {
+    setWidth(390)
+    show({ collapsible: true, status: <span>One purchase was changed</span> })
+    fireEvent.click(fold())
+    expect(within(bar()).getByText('Next step: market pricing')).toBeInTheDocument()
+    expect(within(bar()).queryByRole('button', { name: 'Submit' })).toBeNull()
+    expect(within(bar()).queryByText('One purchase was changed')).toBeNull()
+    expect(within(bar()).queryByRole('button', { name: 'About this step' })).toBeNull()
+    expect(unfold()).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('opening it again brings everything back', () => {
+    setWidth(390)
+    show({ collapsible: true, status: <span>One purchase was changed</span> })
+    fireEvent.click(fold())
+    fireEvent.click(unfold())
+    expect(within(bar()).getByRole('button', { name: 'Submit' })).toBeInTheDocument()
+    expect(within(bar()).getByText('One purchase was changed')).toBeInTheDocument()
+    expect(within(bar()).getByRole('button', { name: 'About this step' })).toBeInTheDocument()
+  })
+
+  it('an open info text is hidden with the rest while folded', () => {
+    setWidth(390)
+    show({ collapsible: true })
+    fireEvent.click(within(bar()).getByRole('button', { name: 'About this step' }))
+    expect(within(bar()).getByText('Enter the quote per line')).toBeInTheDocument()
+    fireEvent.click(fold())
+    expect(within(bar()).queryByText('Enter the quote per line')).toBeNull()
+  })
+
+  it('the spacer under the page follows the bar when it is measured again', () => {
+    setWidth(390)
+    const measured = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(150)
+    try {
+      const { container } = show({ collapsible: true })
+      expect((container.lastElementChild as HTMLElement).style.height).toBe('158px')
+      measured.mockReturnValue(50)
+      fireEvent.click(fold())
+      expect((container.lastElementChild as HTMLElement).style.height).toBe('58px')
+    } finally {
+      measured.mockRestore()
+    }
+  })
+
+  it('is not offered unless asked for, and never on a desktop', () => {
+    setWidth(390)
+    const { unmount } = show()
+    expect(screen.queryByRole('button', { name: 'Fold this step away' })).toBeNull()
+    unmount()
+    setWidth(1024)
+    show({ collapsible: true })
+    expect(screen.queryByRole('button', { name: 'Fold this step away' })).toBeNull()
+    expect(within(bar()).getByRole('button', { name: 'Submit' })).toBeInTheDocument()
+  })
+})

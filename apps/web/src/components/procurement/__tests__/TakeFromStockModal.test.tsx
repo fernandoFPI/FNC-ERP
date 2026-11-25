@@ -54,10 +54,19 @@ const central = [{ id: 'loc-c', name: 'Factory store', type: 'warehouse' }]
 const onClose = vi.fn()
 const onDone = vi.fn()
 const LINE = { id: 'line-1', name: 'Hex bolt', shortfall: 4 }
-function show(line: React.ComponentProps<typeof TakeFromStockModal>['line'] = LINE) {
+function show(
+  line: React.ComponentProps<typeof TakeFromStockModal>['line'] = LINE,
+  mode?: 'take' | 'replace',
+) {
   return render(
     <ThemeProvider>
-      <TakeFromStockModal line={line} requisitionId="req-1" onClose={onClose} onDone={onDone} />
+      <TakeFromStockModal
+        line={line}
+        mode={mode}
+        requisitionId="req-1"
+        onClose={onClose}
+        onDone={onDone}
+      />
     </ThemeProvider>,
   )
 }
@@ -235,6 +244,282 @@ describe('Arabic', () => {
     expect(document.body.textContent).not.toMatch(/req\.(review|bought)\./)
     expect(document.body.textContent).not.toMatch(/\{\{/)
     expect(screen.getByText('أخذ Hex bolt من المخزون')).toBeInTheDocument()
+    await i18n.changeLanguage('en')
+  })
+})
+
+describe('where the item is in stock', () => {
+  const availability = (byLocation: unknown[]) => ({
+    requisitionStockAvailability: [
+      {
+        lineId: 'other-line',
+        byLocation: [
+          { locationId: 'loc-b', locationName: 'Site store', companyName: 'Z', qtyAvailable: 99 },
+        ],
+      },
+      { lineId: 'line-1', byLocation },
+    ],
+  })
+  const store = (id: string, name: string, company: string, qtyAvailable: number) => ({
+    locationId: id,
+    locationName: name,
+    companyName: company,
+    qtyAvailable,
+  })
+
+  it('the stores that hold it are compared with the part chosen, not with the whole line', () => {
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-a', 'Main warehouse', 'Acme', 5),
+    ])
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    const box = () => {
+      const input = screen.getByText('How many from stock?').parentElement?.querySelector('input')
+      if (!input) throw new Error('the quantity box is missing')
+      return input
+    }
+    expect(screen.getByRole('radio', { name: /Main warehouse/ }).textContent).toContain(
+      '5 available, 10 needed',
+    )
+    fireEvent.change(box(), { target: { value: '4' } })
+    expect(screen.getByRole('radio', { name: /Main warehouse/ }).textContent).toContain(
+      '5 available',
+    )
+    expect(screen.getByRole('radio', { name: /Main warehouse/ }).textContent).not.toContain(
+      'needed',
+    )
+  })
+
+  it("lists the stores that hold THIS line's item, most available first, with the company and the quantity", () => {
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-a', 'Main warehouse', 'Yakam', 3),
+      store('loc-c', 'Factory store', 'Factory', 12),
+    ])
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 4 })
+    const group = screen.getByRole('radiogroup', { name: 'In stock at' })
+    const rows = Array.from(group.querySelectorAll('[role="radio"]'))
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('Factory store'),
+      expect.stringContaining('Main warehouse'),
+    ])
+    expect(rows[0]?.textContent).toContain('Factory')
+    expect(rows[0]?.textContent).toContain('12 available')
+    // a line's own quantity is the yardstick, another line's store never appears
+    expect(group.textContent).not.toContain('Site store')
+  })
+
+  it('says how much is missing in a store that holds less than is needed, and still lets it be chosen', () => {
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-a', 'Main warehouse', 'Yakam', 3),
+    ])
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 4 })
+    const row = screen.getByRole('radio', { name: /Main warehouse/ })
+    expect(row.textContent).toContain('3 available, 4 needed')
+    fireEvent.click(row)
+    expect(screen.getByRole('radio', { name: /Main warehouse/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+
+  it('picking a store chooses it: the confirm sends that place', () => {
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-a', 'Main warehouse', 'Yakam', 8),
+      store('loc-c', 'Factory store', 'Factory', 12),
+    ])
+    show()
+    fireEvent.click(screen.getByRole('radio', { name: /Factory store/ }))
+    expect(screen.getByRole('radio', { name: /Factory store/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(screen.getByRole('radio', { name: /Main warehouse/ })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+    fireEvent.click(confirmButton())
+    expect(sentVariables().sourceLocationId).toBe('loc-c')
+  })
+
+  it('in Use stock instead the yardstick is the whole quantity to cover, not the typed one', () => {
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-a', 'Main warehouse', 'Yakam', 5),
+    ])
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    expect(screen.getByRole('radio', { name: /Main warehouse/ }).textContent).toContain(
+      '5 available, 10 needed',
+    )
+  })
+
+  it('the place list says which stores hold the item, and puts them first', () => {
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-b', 'Site store', 'Yakam', 6),
+    ])
+    show()
+    fireEvent.click(screen.getByText('Choose a location'))
+    const options = screen.getAllByText(/Main warehouse|Site store|Factory store/)
+    const texts = options.map((o) => o.textContent)
+    // the radio row and the option both name Site store; the first option listed is the one that holds stock
+    expect(texts.some((x) => x === 'Site store · 6 available')).toBe(true)
+    const idxStock = texts.indexOf('Site store · 6 available')
+    const idxOther = texts.indexOf('Main warehouse')
+    expect(idxStock).toBeGreaterThanOrEqual(0)
+    expect(idxStock).toBeLessThan(idxOther)
+  })
+
+  it('says so when no store holds the item, and shows no list', () => {
+    queryData.RequisitionStockAvailability = availability([])
+    show()
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.getByText(/No store holds this item right now/)).toBeInTheDocument()
+  })
+
+  it('shows neither list nor warning before the answer arrives, and asks only while open', () => {
+    show()
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByText(/No store holds this item/)).toBeNull()
+    show(null)
+    expect(queryOptions.RequisitionStockAvailability?.skip).toBe(true)
+  })
+
+  it('in Arabic, with no raw key', async () => {
+    await i18n.changeLanguage('ar')
+    queryData.RequisitionStockAvailability = availability([
+      store('loc-a', 'Main warehouse', 'Yakam', 3),
+    ])
+    show()
+    expect(document.body.textContent).not.toMatch(/req\.(review|bought)\./)
+    expect(document.body.textContent).not.toMatch(/\{\{/)
+    await i18n.changeLanguage('en')
+  })
+})
+
+describe('Use stock instead (mode replace)', () => {
+  const replaceButton = () => screen.getByRole('button', { name: 'Use stock instead' })
+  const sentReplace = (): Record<string, unknown> => {
+    const fn = mutationFns.ReplaceReviewPurchasesWithStock as Fn | undefined
+    const call = fn?.mock.calls.at(-1)
+    if (!call) throw new Error('nothing was sent')
+    return (call[0] as { variables: Record<string, unknown> }).variables
+  }
+
+  const replaceQtyBox = () => {
+    const label = screen.getByText('How many from stock?')
+    const input = label.parentElement?.querySelector('input')
+    if (!input) throw new Error('the quantity box is missing')
+    return input
+  }
+
+  it('says what it does, and starts the quantity on everything still to cover', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    expect(screen.getByText('Use stock instead of buying Hex bolt')).toBeInTheDocument()
+    expect(screen.getByText(/Choose how many of the 10 to take from stock/)).toBeInTheDocument()
+    expect(replaceQtyBox().value).toBe('10')
+    expect(screen.getByTestId('replace-hint').textContent).toBe(
+      'All 10 come from stock: every purchase of this item and its receipt is removed.',
+    )
+  })
+
+  it('a smaller number says what stays bought, and the hint follows what is typed', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    fireEvent.change(replaceQtyBox(), { target: { value: '4' } })
+    expect(screen.getByTestId('replace-hint').textContent).toBe(
+      '4 come from stock. The purchases are reduced by that much, newest first, and the other 6 stays bought.',
+    )
+    fireEvent.change(replaceQtyBox(), { target: { value: '10' } })
+    expect(screen.getByTestId('replace-hint').textContent).toMatch(/^All 10 come from stock/)
+    fireEvent.change(replaceQtyBox(), { target: { value: '11' } })
+    expect(screen.queryByTestId('replace-hint')).toBeNull() // more than there is: no sentence for it
+  })
+
+  it('sends a smaller quantity as qty, and nothing for the whole of it', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    choose('Choose a location', 'Main warehouse')
+    fireEvent.change(replaceQtyBox(), { target: { value: '3.5' } })
+    fireEvent.click(replaceButton())
+    expect(sentReplace()).toEqual({
+      requisitionId: 'req-1',
+      lineId: 'line-1',
+      sourceLocationId: 'loc-a',
+      qty: 3.5,
+    })
+    fireEvent.change(replaceQtyBox(), { target: { value: '10' } })
+    fireEvent.click(replaceButton())
+    expect(sentReplace()).not.toHaveProperty('qty')
+  })
+
+  it('refuses zero and more than is left to cover, before anything is sent', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    choose('Choose a location', 'Main warehouse')
+    fireEvent.change(replaceQtyBox(), { target: { value: '0' } })
+    fireEvent.click(replaceButton())
+    expect(addToast).toHaveBeenLastCalledWith({
+      message: 'The quantity must be above zero',
+      type: 'error',
+    })
+    fireEvent.change(replaceQtyBox(), { target: { value: '11' } })
+    fireEvent.click(replaceButton())
+    expect(addToast).toHaveBeenLastCalledWith({
+      message: 'Only 10 is left to cover',
+      type: 'error',
+    })
+    expect(mutationFns.ReplaceReviewPurchasesWithStock).not.toHaveBeenCalled()
+  })
+
+  it('needs a place, and sends the line and the place but no quantity', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    fireEvent.click(replaceButton())
+    expect(addToast).toHaveBeenCalledWith({
+      message: 'Choose where to take it from',
+      type: 'error',
+    })
+    expect(mutationFns.ReplaceReviewPurchasesWithStock).not.toHaveBeenCalled()
+    choose('Choose a location', 'Main warehouse')
+    fireEvent.click(replaceButton())
+    expect(sentReplace()).toEqual({
+      requisitionId: 'req-1',
+      lineId: 'line-1',
+      sourceLocationId: 'loc-a',
+    })
+    expect(mutationFns.TakeReviewLineFromStock).not.toHaveBeenCalled()
+  })
+
+  it('a line that already draws from a shelf starts on that shelf', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 6, location: 'loc-b' }, 'replace')
+    fireEvent.click(replaceButton())
+    expect(sentReplace().sourceLocationId).toBe('loc-b')
+  })
+
+  it('on success it says the purchase was replaced, tells the page and closes; on a refusal it stays open', () => {
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    choose('Choose a location', 'Main warehouse')
+    fireEvent.click(replaceButton())
+    act(() => {
+      mutationOptions.ReplaceReviewPurchasesWithStock?.onError?.(
+        new Error('Insufficient available stock'),
+      )
+    })
+    expect(addToast).toHaveBeenLastCalledWith({
+      message: 'Insufficient available stock',
+      type: 'error',
+    })
+    expect(onDone).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => {
+      mutationOptions.ReplaceReviewPurchasesWithStock?.onCompleted?.()
+    })
+    expect(addToast).toHaveBeenLastCalledWith({
+      message: 'Purchase replaced by stock. A PO Admin has to approve it.',
+      type: 'success',
+    })
+    expect(onDone).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('in Arabic, with no raw key', async () => {
+    await i18n.changeLanguage('ar')
+    show({ id: 'line-1', name: 'Hex bolt', shortfall: 10 }, 'replace')
+    expect(document.body.textContent).not.toMatch(/req\.(review|bought)\./)
+    expect(document.body.textContent).not.toMatch(/\{\{/)
     await i18n.changeLanguage('en')
   })
 })
