@@ -3899,7 +3899,7 @@ Don't re-derive, check these first.
     called by `confirmReview` and `approveReview`. The state-machine edge `items_bought -> sourcing` is gone. (b) *One place for who may
     do what*: `lib/requisitionReview.ts` (`canActOnReview`, `canApproveReview`, `reviewNeedsApproval`, `nextReviewOriginals`), the server
     sends the answers to the page as `review.caller_can_edit` / `caller_can_approve` (the page keeps no copy), and the My Queue SQL carries
-    the same rule for the approver (never the organizer, even an organizer who is an admin). (c) *The first edit keeps what it was*
+    the same rule for the approver (until 2026-11-25 never the organizer, even an organizer who is an admin; see #122). (c) *The first edit keeps what it was*
     (`po_line_purchases.review_original_qty` / `_price`, migration 329); editing back clears it, so a no-op review needs nobody; an edit
     re-judges over-tolerance against the approved price, a changed price loses an earlier sign-off, and approving signs off what the
     edit brought back inside the same transaction as the fork (`beforeFork`). (d) *Send back* removes the chosen purchases and their
@@ -4052,3 +4052,390 @@ Don't re-derive, check these first.
     inventory-check stock and with an existing Store Out), marks through a send-back and a rejection, removal releasing the reservation),
     `requisition-organizer-review.test.ts` (rules), web `TakeFromStockModal.test.tsx` (13), the "taking part of a line from stock" block in
     `OrganizerReviewLines.test.tsx` (13) and the key-parity test of `OrganizerReviewPanel.test.tsx`. Related to #44, #105, #115, #116.
+
+118. **A step that is "remove the purchase, then take from stock" must be one transaction, must keep what it deleted, and has a side that
+    cannot be undone.** After #117 the user asked what to do when a line that was bought in full should come from stock (their screen:
+    cash purchases of one unit each). The only road was a send-back with the purchase removed and the buyer's resolve-from-stock, which
+    is a long way for a one-unit item. `replaceReviewPurchasesWithStock` (the "Use stock instead" button, migration 333
+    `po_lines.review_replaced`) does it in one step: the line's purchases and their receipts are removed, what they were is kept on the
+    line, and the line's whole remaining quantity (ordered minus what stock already covers) is reserved from the shelf. It counts as a
+    change a PO Admin approves (`review_stock_qty` is set, so `stocked` counts it), the buyers are told (the existing
+    `REQ_REVIEW_LINE_REMOVED` notice, with its own words), and the Store Out is made only after the approval, as for Take from stock.
+    (a) *Reserve BEFORE deleting, in the same transaction.* The shelf's availability is read under a row lock; when it cannot give the
+    whole quantity the call throws and the purchase AND its receipt are still there (a test reads both afterwards). Doing the deletes
+    first and the reservation last would have been correct only if the throw rolled back, which it does here, but the order also keeps
+    the failure message from describing a state that never existed.
+    (b) *What it deletes is kept for the approver, as it was when the review began* (a purchase the organizer had already edited keeps its
+    original quantity, price and currency in the snapshot, `COALESCE(review_original_*, current)`), in the same shape the removed lines
+    use, so the page draws both with one block. The review's per-currency "was" totals read these snapshots too (a line added in the
+    review contributes nothing to "was": it was not part of what was bought when the review began), and removing the line afterwards
+    carries them into the removed-line record, otherwise a line replaced and then removed would show an empty purchase list.
+    (c) *The one thing it cannot undo.* "Put back" restores a line to its state before the stock was taken, but the purchases are gone, so
+    putting the stock back would leave the line covered by nothing (and the fork would silently leave it unresolved). It is refused for a
+    replaced line, with the road back named (send the requisition back to Items Bought to buy it again), and the page hides the button.
+    Say what cannot be undone in the dialog text before the click, not only in the refusal after it.
+    (d) *Two checks, two mutations: one helper each.* Taking from stock and replacing purchases need the same location rule (the company's,
+    the central warehouse's or one the caller has a role in; never a virtual location) and the same reservation (available quantity under a
+    row lock, refusal with the numbers). They were first written inline in the take mutation; the second user made them
+    `assertReviewStockLocationGW` and `reserveReviewStockGW` instead of a copy (the two-paths-for-one-thing rule, #23).
+    (e) *A test that "failed" after an unrelated change was a tie, not a bug.* After the fork both purchases sit on line 1 of their own
+    purchase order, so `ORDER BY line_number` has no order, and a test that took `[first]` read whichever row the heap returned (it passed
+    with my changes stashed, failed with them, and passed again when the test found its purchase by id). A result that flips when you
+    stash is not proof the code is at fault: look for an ordering that depends on physical row order (#35).
+    (f) *Not built.* A line with nothing bought uses Take from stock (the refusal says so); the replaced purchases are not shown on the
+    requisition's own Lines table, only in the review; "Use stock instead" for a custom item is refused (no stock to use).
+    Mutation-checked: 28 of 28 backend mutations killed (one first survived because no test edited the quantity before replacing; it has one now). Tests: `services/gateway/tests/requisition-review-add-remove.test.ts` (block
+    "use stock instead of the purchases": the whole replacement, the review totals, an edited purchase kept as it was, approval makes the
+    Store Out and a purchase order for the other line only, short mark cleared, the buyers told, the refusals, nothing removed when the
+    shelf cannot give it, a second shelf, an existing Store Out, who and when, Put back refused, removal after a replacement, a
+    send-back), web `TakeFromStockModal.test.tsx` (replace mode) and the "use stock instead of the purchases" block of
+    `OrganizerReviewLines.test.tsx`. Related to #44, #105, #115, #116, #117.
+
+119. **Two tables for one thing: the review drew its own table next to the Lines table, so the same line was read twice.** The user,
+    with a screenshot of an organizer review ("Review what was bought" above the Lines table): "can we merge the review table with the
+    existing lines table". Both showed the item, quantity, price, total and what was bought. They differed in grain: the review had one
+    row per PURCHASE (a line bought from two vendors was two rows), the Lines table one row per LINE. Done (web only, no server or
+    permission change; the gates `caller_can_edit` / `caller_can_approve` still come from the server):
+    (a) *One controller, pieces for the page.* `components/procurement/OrganizerReviewPanel.tsx` now exports `useOrganizerReview`
+    (every state and mutation; called by `RequisitionDetail` before its early returns, null-safe), `ReviewPurchasesCell` (the Lines
+    table's Bought cell during the review: each purchase with vendor, quantity @ price, total, what it was, Changed / over-tolerance
+    badges, receipts, who bought it and its own Change button, edited in place), `ReviewActionsCell` (the last column, "Status": Take
+    from stock, Use stock instead, Put back, Remove item, the Added badge), `ReviewRemovedLines` (under the table: a removed line has no
+    row) and `OrganizerReviewPanel` (the slim card, the dialogs and the action bar, now `{ ctl, barSlot }`). The page builds the cells
+    only while `reviewCtl.active` (the two review statuses and a `review` from the server), so every other status draws exactly the Lines
+    table it did.
+    (b) *A column that is the input cannot be switched off* (#76a): Bought and the review column are in `lockedLineColumns` while the
+    review is on; the earlier pricing columns (inventory cost, store, market, verified price) start switched OFF in the review so the
+    table stays readable, and the Columns menu still offers them (a person's own saved choice wins). The review column exists only for
+    someone who can act or when a line was added.
+    (c) *Whole-line actions are per line, not per purchase.* Use stock instead and Remove item used to hang on the first purchase row
+    (`firstOfLine`); with one row per line they are drawn once, and step aside while one of the line's purchases is being edited.
+    (d) *Dead strings go with the table.* Six `req.review.*` texts (item, vendor, total, receipts, nothingBought, noPurchase) were only
+    headers and the empty state of the old table; the test that fails for a text nobody uses made them leave both locale files. A
+    key the page itself uses (`req.review.state`, the column header) must be in that test's source list.
+    (e) *Tests.* The panel tests now render a small harness (`__tests__/reviewHarness.tsx`: the hook, the card and a Table of the two
+    cells) instead of a table of their own; 84 of 87 passed unchanged, three were about the old table. The page test asserts one table on
+    the page, the review inside the line's row, who sees the buttons, the default columns and the other statuses unchanged. Six new tests
+    cover a line with two purchases in one row, the Total column and the removed-lines block. Mutation-checked: 29 mutations, all killed (three survived at first and each named a missing test: the not-bought note on a line with no purchase, and the removed-lines block outside the review and on the page).
+    (f) *"It looks like a mess" was the first layout, and only a photograph showed why.* The first cell was a wrapping row of badges, a link,
+    the buyer and a Change button, so every purchase had its buttons in a different place, the Total column (the estimate: 1,000) beside a
+    purchase of 15,000 disagreed, and on a phone the half-width field squeezed each purchase to a few characters. Now each purchase is one block (quantity
+    @ price = total, vendor and buyer, what it was, then View receipt and the badges, with Change top-right), a hairline separates a line's
+    purchases, the whole-line actions are one column of equal buttons, the Total column sums what was bought per currency
+    (`reviewLineTotals`) while the review is on, and the Bought cell is `mobileFullWidth`. Checked in a login-free page of the real cells
+    (`scratchpad/review`, esbuild + headless Chrome: desktop, dark, phone) before showing it. A saved Columns choice beats the new default, so a
+    person who had switched Inventory cost on will still see it.
+    NOT done: the real page with real data and Arabic; the phone layout was only checked in that standalone page. Related to #76 (the table cell as the input), #115 to #118 (the review).
+    Later the same day: the line's buttons were rearranged (Change sits first under the purchase text, Remove item is an outline button, the column is `mobileFullWidth` so on a phone they are two to a row under the purchases and the bottom bars stack their buttons, `StageActionBar stackButtonsOnPhone`), and the stock dialogs list the stores that hold the item (the existing `requisitionStockAvailability` query, not `product.balances`, which is company-scoped and misses the central warehouse). Then #120.
+
+120. **A step that deletes rows and keeps only a text summary cannot be undone; store the whole rows when a step must be reversible, and
+    refuse the undo when anything touched the line since.** The user, looking at a line in the organizer review that "Use stock
+    instead" had already replaced: "what if I want to cancel this while it's still in review" and "what if I want to grab half or a third
+    of the quantity from inventory". The first had no answer: #118 deleted the line's purchases and their receipts and kept only
+    `review_replaced` (vendor NAME, quantity, price, currency, "had a receipt"), which is enough for the approver to read and not enough to
+    rebuild a purchase (no vendor id, no receipt file), so Put back was refused for a replaced line and the only roads back were Remove
+    item (deletes the whole line) or a send-back. The second was possible only in two steps (Change the purchase down, then Take from
+    stock for the shortfall), and not at all on a line already fully replaced.
+    Fix (migration 334, `po_lines.review_stock_undo` JSONB, an array of operations): each "Use stock instead" writes one entry holding the
+    line as it was (`line_before`), what the line covers from stock afterwards, the purchases it REMOVED as full rows
+    (`to_jsonb(po_line_purchases)` plus `to_jsonb(document_attachments)` of their receipts), the purchases it only REDUCED (their old
+    quantity and review "was" marks), the quantity reserved and where, and how many `review_replaced` summaries it added.
+    `undoReviewStockInstead` reverses the LAST entry: it puts the rows back with `INSERT ... SELECT * FROM jsonb_populate_record(NULL::table,
+    $1)` (so a column added to either table later is carried without editing the code; the receipt attachment goes in BEFORE the purchase
+    because the purchase points AT it, #21), restores reduced quantities and marks, releases the reservation and restores the line.
+    It refuses, naming why, when the line was touched since (`undoBlockedReason`: the quantity covered from stock or a reduced purchase no
+    longer holds what the operation left, otherwise restoring old rows would overwrite what the organizer did afterwards), when a Store
+    Out exists for the line, or when a receipt file is gone. A send-back clears every entry (the buyers record the purchases again, so the
+    saved rows would no longer match anything). Lines replaced before this migration have no entry and keep the old behaviour. Put back
+    is refused for a line that has an entry (it would leave the line under-covered) and says to undo instead.
+    Part of a line: `replaceReviewPurchasesWithStock` takes an optional `qty`. Left out, or the whole remaining quantity, it is the full
+    replacement as before. Less covers only that much: first the part never bought (the shortfall) needs no purchase to change, the rest
+    comes off the purchases NEWEST first (`planPurchaseReduction`, `splitStockQuantity` in `lib/reviewStockUndo.ts`), a purchase nothing is
+    left of is removed with its receipt, and a reduced one keeps its vendor and receipt and gets its "was" mark like a Change. The
+    dialog has a quantity box in both modes and compares each store's quantity with the part chosen, not the whole line.
+    How to spot the class: a "replace / merge / convert" action that deletes rows and logs a string; ask whether anyone will ever want to
+    reverse it, and if so keep `to_jsonb(row)` of everything it deletes in the same transaction.
+    Traps met. (1) A mutation runner that spawns vitest from node gave "91 failed" for EVERY mutation: the web suite fails there even
+    unmutated (duplicate React, `Cannot read properties of null (reading 'useState')`), so each mutant looked killed. Run the unmutated
+    command through the same runner first; here the web runs go through PowerShell with node only applying the patch
+    (`mutate-web-step.mjs apply <i>`, restore from a saved copy), and the real kill counts were 1 to 3 per mutant. (2) A heredoc turned
+    `\r\n` inside a generated script into real newlines and the script did not parse (#69 again): write scripts with the file tool.
+    (3) A new test helper used the name of an existing top-level helper for a different label; rename the nested one.
+    Not done: the Store Out / stale-cost checks are not repeated in Undo beyond the Store Out refusal; the buyers are not told when a
+    replacement is undone (the log has `review_stock_undone`); nothing was looked at in a browser. Tests:
+    `services/gateway/tests/review-stock-undo-rules.test.ts` (14, pure rules), `requisition-review-add-remove.test.ts` ("part of a line
+    from stock, and undo", real Postgres through the real mutations: one and two purchases, newest first, shortfall first, whole quantity,
+    refusals, approval makes a Store Out for just the part, undo of a full replacement compares the purchase row column for column,
+    undo of a part, two stacked operations, undo then a different part, each refusal, send-back clears, another company), web
+    `TakeFromStockModal.test.tsx` and `OrganizerReviewLines.test.tsx` (quantity box, hint, qty sent only when smaller, Undo button gates).
+    Mutation-checked: 13 backend and 11 web, all killed. Related to #115 to #119, #21, #36, #118.
+
+121. **A review table that shows everything about every line at once is busy; one status per line, one menu, and details on demand,
+    with the actions kept in ONE list.** The user, after #115 to #120: "its busy and confusing now for both mobile and desktop." On the
+    screen with four lines each row carried up to 12 pieces of text and controls (two or more full-width buttons, Change, View, badges,
+    was / now lines, stock notes), ten columns of which at least four meant nothing in the review, and a "Double-check the store price"
+    banner that belongs to the inventory check. A clickable mockup (an Artifact with the same four lines) was agreed first, then built:
+    (a) *One status per line.* `reviewLineChips(line)` decides what a line shows: Needs attention (an over-tolerance purchase nobody has
+    signed off, the only thing that blocks the review), Added, From stock, Not fully bought, Changed; a line nothing happened to says
+    As bought, From inventory (the inventory check covered it) or Not bought. Several can apply, so the cell shows every one that does.
+    (b) *Details only when opened.* The Bought cell keeps `qty @ price`, vendor, buyer, Change and the "Taking N from stock" line;
+    everything else (what it was before, each purchase's total and receipt, the over-tolerance flag, what stock replaced, what is not
+    bought, the added-item warning) is `ReviewLineDetails`, drawn under the row by the Table's own `renderExpanded` when the arrow is
+    pressed (`ctl.expanded`). (c) *The rare actions are a ⋯ menu.* `reviewLineMenuItems(ctl, line, t)` is the ONE list (Use stock
+    instead, Take from stock, Undo, Put back, Remove item, each with exactly the old conditions); the desktop `RowMenu` and the phone sheet
+    both read it, so they cannot drift (#23, #24). `RowMenu` gained an optional `ariaLabel` (default unchanged), so the button is named
+    "More actions for <item>". Nothing the buttons used to say is lost: the per-line `aria-label`s are gone because the menu button now
+    carries the line's name, and six now-unused strings were removed from both locale files (the key-parity test fails for an unused one).
+    (d) *A summary line above the table* (`ReviewSummaryStrip`): Items, Needs attention, Changed, Added, From stock as counts, and Removed
+    as a chip that opens the removed-items list (a removed line has no row). The list moved from under the table to behind that chip. The
+    labels are "Changed: 1", not "1 changed", on purpose: no plural forms, so Arabic needs none.
+    (e) *Fewer columns by default.* During the review Handled by, From stock and Notes start switched off (with the earlier pricing
+    columns); the Columns menu brings every one back, and Notes can be switched off only during the review (every other stage keeps it
+    always on). The Status column is now drawn for everyone, the approver included, because the chips and the details are what the
+    approver reads; only the ⋯ menu needs the right to edit.
+    (f) *The store-price banner and the row tag are hidden during the review* (`isStaleLine` returns false while it is on; they still show
+    at the other stages, and a test proves the fixture can show them).
+    (g) *Phone: a compact card per line and a sheet.* `ReviewPhoneList` replaces the Table on a phone while the review is on: name and
+    total, a one-line purchase summary, the chips and an arrow; a tap opens the shared `Modal` (a bottom sheet on a phone) with the status,
+    the purchases with Change (the inline editor works inside the sheet), the details and the actions from the same menu list, plus the
+    line's notes button the page passes in. The Columns button is not drawn on a phone in the review.
+    Traps met. (1) *A runner that spawns vitest from a node script reported every mutation killed.* The web suite fails there even
+    unmutated (duplicate React, `Cannot read properties of null (reading 'useState')`), so each mutant looked dead with the same count of
+    failures. Run the unmutated command through the same runner first, and drive vitest from PowerShell with node only applying the
+    patch (`mutate-web-step2.mjs apply <i>`, restore from a saved copy); the real counts were 1 to 19. (2) A mutation pattern that
+    matched nothing ("NOMATCH 0") is not a result: the page file had been re-indented, so the pattern was rewritten from the live text.
+    (3) *Wrapping JSX in a conditional re-indents the whole block.* Wrapping the Lines Table in `{!(isPhone && reviewCtl.active) && (` would
+    have left ~150 lines of prettier errors in a legacy file; a small script re-indented only the two blocks I wrapped (the remaining
+    findings there were already over width before). Check `git diff --stat` after. (4) `RowMenu` closes on a window resize, so a
+    full-page screenshot (which resizes the window) never shows an open menu: take a plain viewport screenshot. (5) The browser kept the
+    language in `localStorage`, so the next page of the same origin came up in Arabic: set the language explicitly on every harness load.
+    (6) `fireEvent.mouseDown(document.body)` closes an open `RowMenu` in a test, so two lines' menus never answer one query.
+    How it was checked: the real components in a login-free page (`scratchpad/review`: esbuild + headless Chrome) for desktop resting and
+    opened, the ⋯ menu, dark, Arabic, a phone list and its sheet. Not verified: the real page with real data, a physical phone, Safari.
+    Tests: `OrganizerReviewLines.test.tsx` (77), `OrganizerReviewPanel.test.tsx`, `RequisitionDetailReview.test.tsx` (29, including the
+    phone view of the real page), `reviewHarness.tsx` mirrors the page; 26 mutations, all killed. Related to #76, #88, #98, #115 to #120.
+    First look at the real page (the user's three screenshots, same day), three fixes:
+    (h) *A cell whose parts wrap wherever they land looks different on every row.* The desktop Status column was one flex row with
+    `flexWrap: 'wrap'`: chip, arrow and ⋯ ended up under the chip or beside it depending on the chip's width (the user highlighted
+    the scatter). It is now a two-part grid (`review-status-cell`): the chips on the left, one under the other and left aligned
+    (`ReviewStatusChips stacked`), the arrow and the ⋯ together on the right, centred on the row, with the column given a 170px
+    minimum and the cell a 220px cap so a wide column cannot pull the two parts apart. Rule: give a cell with two kinds of
+    content fixed slots, never a wrapping row.
+    (i) *Phone sheet: the buttons of one purchase belong together.* Change was beside the purchase text and View sat in a Receipts
+    block further down. `ReviewPurchasesCell sheet` draws each purchase as its text, then Change and View in one row of two equal
+    columns (full-size buttons; one alone takes the row; "No receipt" stands where View would be), and `ReviewLineDetails
+    omitReceipts` drops the Receipts block the sheet no longer needs (the over-tolerance badge moved up beside the purchase,
+    since it lived in that block). The line's actions (`SheetActions`) are the ordinary ones two to a row
+    (`auto-fit, minmax(140px, 1fr)`, one alone takes the row) and Remove item alone on its own row at the bottom, so the
+    destructive button is never next to a harmless one. Still the same menu list as the desktop (`reviewLineMenuItems`).
+    (j) *A step bar that covers the lines on a phone can fold.* `StageActionBar collapsible` (opt-in; only the two review bars use it):
+    on a phone an arrow in the title row folds the bar down to its title (the status, the info button, its text and the buttons are
+    hidden), and the spacer under the page follows the new height because the effect that measures the bar lists the folded state. It
+    starts open and is not remembered; a desktop bar is never folded. Strings `req.detail.collapseStep` / `expandStep`.
+    Traps met. The formatter re-wrapped a line a mutation pattern matched (`{status && !isFolded && <div ...>}`), so that mutation
+    printed "NOMATCH 0" (not a result) until the pattern was rewritten from the live text; a test file that mocks a child component
+    as an empty element (`EntityAttachments` here, text elsewhere) must assert that it appears, not its text. Tests: 12 in
+    `OrganizerReviewLines.test.tsx` (the status grid, the sheet pairs and actions), 6 in `StageActionBar.test.tsx` (collapsible), 1 on
+    the real page; 18 mutations, all killed. Not verified: the real page with real data, a physical phone.
+
+122. **A step that reads "no buttons" for the person who made it, and a viewer built for one document reused for the one before it.**
+    The user, a system administrator, opened a requisition in "PO Admin approval" and found no Confirm or Reject: "i am a system
+    admin but no button". Not a bug at the time: the organizer of that requisition (REQ-2026-0059) was the same account, and
+    `canApproveReview` (`lib/requisitionReview.ts`) deliberately refused the organizer even as an administrator (separation of
+    duties, #115), with a page that only said "Waiting for a PO Admin" and nothing about why. I added a sentence explaining it and
+    asked whether to keep the rule; the user answered "allow organizer to approve himself", so the sentence is gone again and the rule
+    changed: `canApproveReview` is now just "an administrator or a PO Admin", organizer or not (an organizer who is neither still
+    cannot, so the approval is never only the organizer's say-so as a plain user). Everything that mirrored the old rule moved
+    together: the two mutations (`approveReview`, `rejectReview`) and their messages, `caller_can_approve`, and the My Queue SQL
+    (`req.organizer_id IS DISTINCT FROM $2` removed, so an organizer-admin now sees their own approval in the queue); the approver
+    notification still leaves the organizer out (they just submitted it and see the buttons). Lesson: when a rule is decided on the
+    server, a screen that hides the action must say why, and a rule that exists in a lib, two mutations and a SQL copy has to be
+    changed in all four. How to spot "I am an admin and the button is missing": compare the document's creator / organizer with the
+    viewer before looking at roles. Tests: the pure rule and the organizer-admin approve and send-back cases in
+    `requisition-organizer-review.test.ts`, the queue case, a plain organizer still refused in `requisition-review-add-remove.test.ts`,
+    and the approver buttons in `OrganizerReviewPanel.test.tsx`.
+    Same session: the status `review_approval` was renamed from "PO Admin approval" to **Re-approval** (en and ar, status label only;
+    the button "Submit for PO Admin approval" and the log sentences keep the PO Admin wording because they name who acts).
+    The Finance-audit receipts window (#103) now also opens for a requisition in its review, where no purchase order exists yet:
+    `PoPhotoViewer` takes `requisitionId` instead of `poId`, reads the requisition's purchases (`REQUISITION_PHOTOS_QUERY`) and each
+    purchase's receipts as `po_line_purchase` attachments (one query per purchase, a failing one is skipped), and shows them under
+    Buyer Receipts named "#line description · vendor"; route `/viewer/requisitions/:id/photos`, `openRequisitionPhotoViewer` (its own
+    window key, so a requisition and a PO with the same id never share a window), `OpenPhotosButton requisitionId` and
+    `PhotoPipPortal requisitionId`; the button sits beside the review summary on a desktop only (a phone cannot float a window).
+    Not covered by a test: the floating (picture-in-picture) portal of the requisition page; verified only by reading and by the PO's
+    own tests. Tests: `RequisitionPhotoViewerPage.test.tsx` (9), the "receipts window" block in `RequisitionDetailReview.test.tsx`,
+    `OpenPhotosButton.test.tsx`, `poPhotoViewer.test.ts`; 10 mutations on the viewer and its wiring, 9 killed (the survivor, skipping the PO queries when a requisition is shown, is equivalent: with no `poId` the id is
+    empty and the same `skip` applies). Related to #103, #115, #121, #24.
+    **Same day, flagging lines when sending the review back.** The approver can now tick lines in the Re-approval table (a tick
+    column on a desktop, a "Flag this line for the organizer" box in the phone sheet) and give each its own reason, as at the
+    approval stages; `rejectReview` takes optional `lineFlags` (`applyLineFlags`, `flagged_from_status = 'review_approval'`, one
+    transaction with the move back), unlike the other reject mutations where a flag is required, because a rejection can be about
+    the whole requisition. With flags the overall reason can stay empty (the lines' reasons are composed); a flagged line without
+    its reason holds the button back. The organizer sees a "Flagged" status, who flagged it and why in the line's details;
+    resubmitting marks them "Flag answered" (`markAllOpenFlagsAddressed`); when the review ends (confirm or approve, in
+    `forkChildPurchaseOrders`) the review's own flags are resolved, so none hangs on a requisition in Sourcing; a PO Admin may also
+    resolve one by hand (`resolveLineFlag`, which only knew the other two origins). Flags of other steps are never touched.
+    Same family as #24 (a gate and what mirrors it): the web tick column reads `caller_can_approve` from the server and keeps no rule
+    of its own. Tests: gateway `requisition-organizer-review.test.ts` (10 more, real Postgres incl. the real schema), web
+    `OrganizerReviewPanel.test.tsx` (11 more) and `RequisitionDetailReview.test.tsx` (4); 21 mutations, all killed.
+    **My lint check of my own hunks was vacuous for a while** (the diff paths carried `apps/web/` and the lint paths did not, so
+    nothing ever matched and it printed "0 findings"): it found real prettier and `!` findings once the prefix was fixed, and
+    `formLookCoverage` caught a labelled `Textarea` without `field`. When a check reports 0, make it fail once on purpose.
+    Dev needs the gateway restarted for the new argument.
+
+123. **A sign-off between two approvals: who may decide, what a "no" means, and every place that mirrors the gate.** The user, last
+    thing on the review: when the organizer took items from stock, "the store keeper has to approve" in Re-approval BEFORE the admin,
+    "give him permissions to see and act there", and "the store out and the PO make them happen after admin approval". Decisions (the
+    user's answers to three questions): one sign-off (not per line); the store keeper CANNOT send the review back, a "no" is a reason the
+    administrator reads and the administrator has the final say (only he sends it back to the organizer); the same people as the inventory
+    check (a store_keeper position holder whose scope covers the requisition, `userHasPositionForRequisitionGW`, plus administrators); and
+    the administrator's Approve is blocked until the store keeper has signed. Nothing needed changing for "Store Out and PO after the
+    admin": `forkChildPurchaseOrders` already makes both, only in `approveReview` (the sign-off itself makes neither; a test checks it).
+    Design (migration 335: `requisitions.stock_review_status` NULL / approved / rejected, `_by`, `_at`, `_reason`). The step exists only
+    while a review item was taken from stock (`reviewNeedsStoreKeeper`: `stocked > 0`, the same count that already forces a PO Admin);
+    with none there is no store keeper step and nothing changes. `approveReviewStock` / `rejectReviewStock` (one function,
+    `decideReviewStockGW`: role gate, row lock, log rows `approve_stock_review` / `reject_stock_review`, notice to the approvers);
+    a store keeper may change their mind until the administrator acts; `approveReview` refuses with the reason (`stockGateReason`, pending
+    or rejected); every new submission and every send back clears the decision (a stale approval must never carry into a new round).
+    `RequisitionReview.stock_review` and `caller_can_decide_stock` are decided on the server and the page keeps no copy (#24). The rule
+    lives in four places that must agree: the lib, the mutation gate, the My Queue SQL (a store keeper sees the requisition until they have
+    signed, `req.stock_review_status IS DISTINCT FROM 'approved'`) and the page flags. New notice `REQ_REVIEW_STOCK_APPROVAL_REQUIRED`
+    (needs a worker case, #60: the guard test covers it).
+    Page: the Re-approval bar shows the store keeper "Approve stock" / "Reject stock" (a reason dialog), the administrator a disabled Approve
+    with what is holding it ("Waiting for the store keeper..." or the rejection and its reason, with Send back still open), and the card
+    says who signed. Traps. (1) Adding a gate breaks every older test that approved a review with stock in it (4 tests in
+    `requisition-review-add-remove.test.ts`); a `signStock` helper signs as an administrator where there is stock, and the gate has its
+    own tests. A rule that blocks an existing action is a fixture change in every suite that performs it (#112). (2) A mutation that
+    removed the reset on submission SURVIVED because the send back also resets: it is defence in depth, so a test plants a stale
+    `approved` row and submits. (3) A "the administrators were told" check passed without the notice, because the submission had already
+    sent one of the same type: match on the body. (4) Not done: the My Queue row still words a store keeper's item as "Approve the changes"
+    (the queue knows the status, not which role the row is for); a store keeper who is not an approver sees no line ticks (flagging is for
+    the one who can send it back). Tests: `requisition-review-add-remove.test.ts` (14 new, real Postgres incl. the real schema and the
+    queue), `OrganizerReviewPanel.test.tsx` (12 new); 22 mutations, all killed. Apply migration 335 to dev AND test (#11); restart the
+    gateway and worker. Related to #24, #60, #112, #115, #117, #122.
+
+124. **A discount recorded next to a price: one price has to count everywhere, and "price" in the review has to mean that one.**
+    The request (Items Bought): "a new field in each item row, price after discount, because some vendors give discounts; when it
+    is filled the system counts it toward the total and the actual price becomes only informational." The example that settled the
+    reading: quantity 5, actual price 42.50 USD, price after discount 40 USD, PER UNIT (212.50 becomes 200.00). I first read 42.50
+    as a line total, because my own earlier example had printed "5 @ 8.50 = 42.50"; asking cost one message and avoided building a
+    line-total field. When a user's example repeats a number you wrote, check which reading they mean before designing.
+    Design (migration 336): `po_line_purchases.discounted_unit_price NUMERIC(20,4)`, nullable (NULL = no discount, every older
+    purchase unchanged), with a CHECK that it is above 0 and not above `actual_unit_price`. The quoted price stays on the purchase
+    as information; the price that counts is `COALESCE(discounted_unit_price, actual_unit_price)`, written once
+    (`services/gateway/src/lib/purchaseDiscount.ts`: `effectiveUnitPrice`, `effectivePriceSql`, `discountedPriceProblem`) and
+    mirrored for the page (`apps/web/src/lib/purchaseDiscount.ts`, pinned to the server file by a test). A discount is per purchase,
+    in the purchase's own currency, nothing is converted, and the quoted price is NOT carried to the child PO line (the PO line
+    holds the price that counts in both `unit_price` and `actual_unit_price`; keeping the list price there would need another column).
+    Where the price is read, and what each does with the discount (nine places, found by grepping `actual_unit_price` and
+    `po_line_purchases`, not by the screen the user named): the fork that makes the child POs (price, line total and PO total); the
+    over-tolerance check at `recordLinePurchase` and again in `editReviewPurchase` (judged on the price that counts, so a quoted 42.50
+    against an approved 40 with a 41 ceiling is over tolerance alone and fine after a discount of 40); the review's per-currency "was"
+    and "now" totals; the snapshot kept for a removed line and for purchases replaced by stock (they record the price that counted,
+    so the approver reads what was bought); the added line's own price and approved price; the Lines table's Total during the review;
+    and every place the page prints a purchase. The undo entry for "Use stock instead" keeps the whole row (`to_jsonb(plp)`) and
+    rebuilds it with `jsonb_populate_record`, so the new column rode along with no change there.
+    Rules that were decisions, not accidents. (1) In the review, "price" means the price that counts: `review_original_price` holds
+    what counted when the review began, so adding or removing a discount is a price change a PO Admin has to approve, while changing
+    only the quoted price under an unchanged discount changes nothing that counts and is saved as information (no approval, no
+    "was"). (2) A discount equal to the quoted price is accepted (no saving, harmless); above it, or zero, is refused by the page
+    (inline, before anything is sent), by the server (a sentence) and by the database. (3) On the edit mutation the argument is
+    "given or not": `'discountedUnitPrice' in args` tells an omitted argument (keep) from `null` (take the discount off); the page
+    sends the key only when it changed, so an edit that does not touch the discount sends no key. A first read of this as
+    `args.discountedUnitPrice ?? current` would make a discount impossible to remove (mutation-checked).
+    Traps met. (a) The discount box reused the price box's "Currency" accessible name, so five older page tests that find the price's
+    currency by that name saw two; the second pill has its own name. (b) Two of my first gateway tests never reached the review: one
+    bought only one of two lines, one recorded an over-tolerance purchase, which holds a requisition at Items Bought until someone else
+    signs it off (`tryAutoFinishBuying`); buy every line, and sign off an over-tolerance one, before expecting "organizer_review".
+    (c) The review harness table has no Total column (the page draws that), so a row-total assertion belongs on the pure
+    `reviewLineTotals` function, not on the harness row. (d) A shell heredoc with an apostrophe and backticks in the middle of a script
+    failed to parse and wrote nothing (#69 again): test files and patch scripts go through the file tool.
+    Not done: the "Apply to all items" batch card shares only the vendor and the receipt, so a discount is entered on each line's own
+    card (a shared discount makes no sense across different items); the quoted price is not on the child PO page; a discount given as a
+    percentage or as a line total is not an input (the page shows the percentage it works out to, never stores it). Not verified in a
+    browser or in Arabic. Needs migration 336 on dev AND test (#11) and the gateway restarted.
+    Tests: `services/gateway/tests/purchase-discounted-price.test.ts` (real Postgres through the real mutations and the real schema,
+    20: the user's example, tolerance with and without a discount, refusals leaving nothing written, the database CHECK, both prices
+    through the schema, the review totals, the fork's line and PO totals, every Change case including removing a discount and "back to
+    the start is no change", the added line, the removed-line snapshot), `apps/web/src/lib/__tests__/purchaseDiscount.test.ts`, the
+    "price after discount" blocks in `ItemsBoughtPage.test.tsx` (9), `OrganizerReviewPanel.test.tsx` (10) and
+    `AddReviewItemModal.test.tsx` (6). Mutation-checked: 13 backend mutations (fork, tolerance on record, review totals was and now, discount storage, each of the three validations, edit current and next price, removing a discount, the added line, the removed-line snapshot), all killed; the web side was covered by tests only. Related to #6 (a total with several writers), #56 (an approved edit that
+    rewrites one copy of a value), #74 and #115 to #118 (the review).
+
+125. **A new list on a screen that already has a sibling: reuse the query that exists, take the labels from the screen that already names
+    the data, and gate it by the key the full page uses.** The request: "under projects, Procurement, add a new tab named Requisitions
+    that lists all requisitions of that project, same as the Purchase Orders tab." Found before building: the gateway's
+    `requisitions(projectId)` query already exists (company scoped, branch scoped like the Requisitions page, newest first, up to 2,000),
+    so no backend change and no migration. The Procurement tab (`ProjectDetail.tsx`) has sub-sections kept in `procSection`
+    (Purchase Orders, Manufacturing Requests, Store Out); Requisitions is a fourth, placed after Purchase Orders, and the default
+    section is still Purchase Orders.
+    What it does. A count ("2 requisitions", six Arabic plural forms) and a "+ New Requisition" button (the same right as the Purchase
+    Orders section's button, `canEdit.procurement`, going to `/procurement/requisitions/new?projectId=`), then a table on a desktop
+    (number, purpose, organizer, created, status) or cards on a phone; a row opens `/procurement/requisitions/:id`. The drawing is its own
+    component (`components/projects/ProjectRequisitionsList.tsx`, props only), because ProjectDetail has no render harness; the
+    page-side wiring is pinned at the source (`projectDetailRequisitionsWiring.test.ts`, with `between(from, to)` so a check cannot be
+    satisfied by an unrelated part of a 36,000-line file).
+    Decisions. (1) *Permission.* The tab section, and the query behind it, need `procurement.po.view`, the key that guards the
+    Requisitions route; the server query itself checks nothing but login and branch scope, so without this a project member could read,
+    on this tab, a list the Requisitions page would refuse them. The Purchase Orders section needs no such key because it reads the
+    project's own `recentPos`; if the two should match, widen or narrow this one deliberately. (2) *Labels.* Purposes are named with
+    `req.purpose.<value>` (Project Supply, Direct Supply...) exactly as the Requisitions page names them; `enumLabel` alone would have shown
+    the raw word `project`, because `project` is not an `enum.*` key (only `direct_supply` is). Status uses
+    `getRequisitionStatusLabel` and `getRequisitionStatusVariant`, the same as the Requisitions page. (3) A row is a keyboard link
+    (`role="link"`, Enter and Space), unlike the Purchase Orders rows beside it, which are click-only `div`s; those were left as they are.
+    (4) The chevron is an SVG, which the browser does not mirror in Arabic, so it flips by hand with `useIsRtl()` (#25).
+    Traps met. (a) *A mutation or a test pinned to a text the formatter had already rewritten.* `eslint --fix --fix-type layout` on a new
+    file re-wraps long lines, so a patch script written against the text I had typed matched nothing ("matched 0 times") and the
+    first script of the pair never ran at all; read the file after a fix, and patch with the Edit tool when the text moved. (b) The
+    type-aware lint rules refuse `!` after an index read (it changes nothing without `noUncheckedIndexedAccess`) and an
+    `any`-typed `vi.fn()` in a new test file; type the mock (`vi.fn<[string], unknown>()`) and a locale as
+    `Record<string, Record<string, Record<string, string> | undefined> | undefined>`, then guard instead of asserting. (c) `||` for
+    "empty falls back to a dash" is flagged by `prefer-nullish-coalescing`, and `??` would not catch an empty string; spell it out
+    in a small `orDash`. (d) A shell heredoc with apostrophes in the middle of a command line failed to parse (#69): scripts and tests
+    go through the file tool.
+    Not done: Purchase Orders rows were not changed to be keyboard links; the list shows no amounts (a requisition has no total of its
+    own until it is priced, and the Requisitions page does not show one either); no filter or search on the tab (a project rarely holds
+    more than a few dozen); a project with more than 2,000 requisitions would be cut at the server's limit. Not verified in a browser or
+    in Arabic. Tests: `components/projects/__tests__/ProjectRequisitionsList.test.tsx` (16: count and plural, rows, dashes for missing
+    values, headings, empty state, click and keyboard, who sees the button, phone cards, the arrow in Arabic, every string in both
+    languages and all six Arabic plural forms) and `pages/projects/detail/__tests__/projectDetailRequisitionsWiring.test.ts` (4).
+    Mutation-checked: 12 mutations (the button's right, a click, Space, phone cards, the empty message, the mirrored arrow, a missing number, and on the page the permission on the query, the project filter, the permission on the list, who may create, the sub-nav entry), all killed; one survived first (a missing number could render empty) and got a stricter assertion. The mutation runner must call vitest from the shell, not spawn it from node (the web suite fails there even unmutated, duplicate React). Related to #12 (check what exists before building), #25 (RTL), #73 and #82 (a component exported for a page with
+    no harness), #104 (a list that is a link).
+
+126. **A filter on a list the page already loads whole: do it in the page, drop what no longer matches, remember it, and name the status
+    the way everything else does.** The request: "add filtering to both requisitions and purchase orders under project procurement, I
+    want to see rejected and filter the statuses." Checked first, so nothing was built on a guess: the project's POs (`recentPos`,
+    one subquery of the `project` query) have NO status filter in SQL, and the requisitions query excludes only `deleted`, so rejected
+    and cancelled ones were already on the page, just unlabelled and unfilterable. No backend change, no migration.
+    What it does. Above each list (Purchase Orders and Requisitions of a project's Procurement tab) a row of chips: **All** with the total
+    and one chip per status that actually occurs, each with its count, in workflow order with Rejected right after the live statuses and
+    before Cancelled. Ticking several shows all of them; ticking none shows everything; "Showing 2 of 5" appears beside the count only
+    while something is ticked. The count in the header and the sub-navigation stay the totals. With one status only there is nothing to
+    choose, so no chips are drawn. The Requisitions section got it inside `ProjectRequisitionsList`; the Purchase Orders list is still
+    inline in `ProjectDetail.tsx` (no render harness), so it uses the same pieces and is pinned at the source.
+    One set of pieces, so the two lists cannot drift: `lib/projectProcurementFilter.ts` (`statusOptions`, `effectiveSelection`,
+    `filterByStatus`, `toggleStatus`, `REQUISITION_STATUS_ORDER`, `PO_STATUS_ORDER`), `hooks/useStatusFilter.ts` and
+    `components/projects/StatusFilterChips.tsx`.
+    Rules worth keeping. (1) *An old filter must never hide every row.* The selection is remembered for the browser tab (sessionStorage,
+    one key per project and list, the #70 pattern, because opening a PO and coming back otherwise throws the filter away), so it can name a
+    status no row carries any more (the last rejected one was reopened). `effectiveSelection` drops such a status before anything is drawn;
+    only statuses that occur are ever offered, so a filtered list is never empty and no "nothing matches" screen is needed. (2) The order of
+    the chips is data, not accident: the workflow order of the two status vocabularies (`ALL_PO_STATUSES` includes the child-PO statuses
+    bought, finance_review, payment_pending and closed), then rejected, cancelled, deleted; a status the order does not know is put last
+    rather than dropped, so a status added later is still filterable (a test pins that both orders hold every status the constants define).
+    (3) The PO row printed its status raw (`<Badge variant="neutral">pending_approval</Badge>`) while a chip would say "Pending approval";
+    the row now uses `getPOStatusLabel` and `getPOStatusVariant` like the PO page and the chip, which changes how the existing PO list
+    reads (the user was told). (4) A chip's accessible name is "Rejected 2": the label and the count are separate elements, and a
+    browser or jsdom joins them with nothing unless a space is there ({' '} costs nothing in a flex row).
+    Traps met. (a) `proj.detail.allStatuses` already existed and means "All Statuses" (used elsewhere); the chip needed a short "All", so
+    it has its own key. The locale script refuses an existing key and wrote nothing, which is how this showed. (b) `eslint --fix --fix-type
+    layout` re-wrapped two calls my source-pin test searched for as one line, so the pin failed for formatting, not for meaning: such pins
+    compare without whitespace and trailing commas (`hasNorm`). (c) The mutation runner must call vitest from the shell, not spawn it from
+    node: from node the web suite fails even unmutated (duplicate React), so every mutation would look killed (#120, #121).
+    Not done: the filter is not in the page address (it is for the tab, not shareable); the Manufacturing and Store Out sections have none;
+    there is no free-text search on these lists; a project with more than 2,000 requisitions is cut by the server's limit. Not verified in a
+    browser or in Arabic. Tests: `lib/__tests__/projectProcurementFilter.test.ts` (rules, both orders), `hooks/__tests__/useStatusFilter.test.tsx`
+    (kept, per key, corrupt or blocked storage), `components/projects/__tests__/StatusFilterChips.test.tsx`, the "status filter" block of
+    `ProjectRequisitionsList.test.tsx` (counts and order, ticking and unticking, stale statuses, one status, phone, Arabic) and
+    `pages/projects/detail/__tests__/projectDetailProcurementFilterWiring.test.ts` (the Purchase Orders side at the source). Mutation-checked: 20 mutations (chip order, rejected before cancelled, stale statuses, nothing-ticked, untick, empty status, the single-status rule, All pressed, the count, a cleared filter staying stored, non-string storage, another project inheriting a filter, the Showing text, both lists ignoring the filter, the PO stale-status drop, the requisition filter memory, the PO badge colour, the per-project PO key), all killed, from a clean 72-test baseline.
+    Related to #12, #25, #70, #125.
