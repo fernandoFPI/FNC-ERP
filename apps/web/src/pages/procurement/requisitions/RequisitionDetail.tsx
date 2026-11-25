@@ -40,6 +40,9 @@ import { denseFormStyles } from '../../../components/ui/fieldStyles'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
+import { usePhotoPip } from '../../../hooks/usePhotoPip'
+import { OpenPhotosButton } from '../../../components/procurement/OpenPhotosButton'
+import { PhotoPipPortal } from '../../../components/procurement/PhotoPipPortal'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -51,7 +54,16 @@ import { useTableView } from '../../../hooks/useTableView'
 import { Button } from '../../../components/ui/Button'
 import { PhaseBar } from '../../../components/procurement/PhaseBar'
 import { StageActionBar } from '../../../components/procurement/StageActionBar'
-import { OrganizerReviewPanel } from '../../../components/procurement/OrganizerReviewPanel'
+import {
+  OrganizerReviewPanel,
+  ReviewActionsCell,
+  ReviewLineDetails,
+  ReviewPhoneList,
+  ReviewPurchasesCell,
+  ReviewSummaryStrip,
+  reviewLineTotals,
+  useOrganizerReview,
+} from '../../../components/procurement/OrganizerReviewPanel'
 import { LinePriceInput } from '../../../components/procurement/LinePriceInput'
 import { InlineSelect } from '../../../components/procurement/InlineSelect'
 import { StaleCostNotice } from '../../../components/procurement/StaleCostNotice'
@@ -828,6 +840,10 @@ export default function RequisitionDetail() {
   // Which optional line columns this person has switched on or off; kept before the early
   // returns below because a hook can't come after them.
   const linesView = useTableView('req-lines')
+  // The organizer review (migration 329) lives IN the Lines table below: this holds its state and mutations.
+  const reviewCtl = useOrganizerReview(req, () => void refetch())
+  // the receipts window (also used by Finance's audit of a PO): drag it to a second screen while the lines are checked
+  const photoPip = usePhotoPip()
   // The Summary shows the few details people look for first; the rest open with "All details".
   const [showAllDetails, setShowAllDetails] = useState(false)
 
@@ -1007,7 +1023,9 @@ export default function RequisitionDetail() {
   }
   // Stale stock cost (playbook #111): a line drawn from stock whose item's Cost is old. At the inventory check the quantity is the one being
   // typed (a replaced item is not judged: the server's age belongs to the original); everywhere else it is the saved quantity.
+  // The store-price double-check belongs to the inventory check, not to the organizer's review of what was bought (playbook #121).
   const isStaleLine = (l: ReqLine) =>
+    !reviewCtl.active &&
     isStaleStockLine(l, {
       liveQty: invEntry ? parseFloat(invQty[l.id] ?? '0') || 0 : undefined,
       overridden: !!productOverride[l.id],
@@ -1124,6 +1142,30 @@ export default function RequisitionDetail() {
     setCommentModal({ lineId: l.id, description: name })
   }
 
+  // What the Bought column says for a line with no purchase on it.
+  const noPurchaseNote = (l: ReqLine) => {
+    if (l.closed_at)
+      return (
+        <span style={{ fontSize: '12px', color: theme.textMuted }}>
+          {`Closed — ${l.closed_reason ?? ''}`}
+        </span>
+      )
+    // Fully covered from stock — qty_from_stock meets or exceeds
+    // what was ordered, so there's nothing left to purchase on
+    // this line at all (see the Store Outs card for its actual
+    // issuance status, not this column).
+    const fullyFromStock = parseFloat(l.qty_from_stock ?? '0') >= parseFloat(l.qty) - 0.0001
+    if (fullyFromStock)
+      return (
+        <span style={{ fontSize: '12px', color: theme.textMuted }}>
+          {t('req.detail.coveredFromInventory')}
+        </span>
+      )
+    return (
+      <span style={{ fontSize: '12px', color: theme.warning }}>{t('req.detail.notYetBought')}</span>
+    )
+  }
+
   // ── Lines table (columns adapt to current stage) ────────────────────────
   const baseLineColumns: Column<ReqLine>[] = [
     // Flag-to-reject checkbox — only at the two statuses a reject box can
@@ -1132,7 +1174,9 @@ export default function RequisitionDetail() {
     // guaranteed visible without horizontal scroll. Lives here, next to the
     // actual line, instead of a second list of line names in the action
     // panel — see toggleLineFlag.
-    ...(req.status === 'price_verification' || req.status === 'pending_approval'
+    ...(req.status === 'price_verification' ||
+    req.status === 'pending_approval' ||
+    reviewCtl.flagging
       ? [
           {
             key: 'flag_toggle',
@@ -1143,9 +1187,10 @@ export default function RequisitionDetail() {
             render: (l: ReqLine) => (
               <input
                 type="checkbox"
-                checked={l.id in flaggedLines}
+                checked={reviewCtl.flagging ? l.id in reviewCtl.flagged : l.id in flaggedLines}
                 onChange={() => {
-                  toggleLineFlag(l.id)
+                  if (reviewCtl.flagging) reviewCtl.toggleFlag(l.id)
+                  else toggleLineFlag(l.id)
                 }}
                 title={t('req.detail.flagThisLineForRejection')}
               />
@@ -1630,33 +1675,20 @@ export default function RequisitionDetail() {
           {
             key: 'purchases',
             header: t('req.detail.bought'),
+            // The review puts each purchase and its buttons here: a half-width phone field is too narrow for that
+            mobileFullWidth: reviewCtl.active,
             render: (l: ReqLine) => {
               const purchases = l.purchases ?? []
-              if (purchases.length === 0) {
-                if (l.closed_at)
-                  return (
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {`Closed — ${l.closed_reason ?? ''}`}
-                    </span>
-                  )
-                // Fully covered from stock — qty_from_stock meets or exceeds
-                // what was ordered, so there's nothing left to purchase on
-                // this line at all (see the Store Outs card for its actual
-                // issuance status, not this column).
-                const fullyFromStock =
-                  parseFloat(l.qty_from_stock ?? '0') >= parseFloat(l.qty) - 0.0001
-                if (fullyFromStock)
-                  return (
-                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                      {t('req.detail.coveredFromInventory')}
-                    </span>
-                  )
+              // During the organizer review this cell IS the review: every purchase with its Change button and receipts.
+              if (reviewCtl.active)
                 return (
-                  <span style={{ fontSize: '12px', color: theme.warning }}>
-                    {t('req.detail.notYetBought')}
-                  </span>
+                  <ReviewPurchasesCell
+                    ctl={reviewCtl}
+                    line={l}
+                    fallback={purchases.length === 0 ? noPurchaseNote(l) : undefined}
+                  />
                 )
-              }
+              if (purchases.length === 0) return noPurchaseNote(l)
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   {purchases.map((p) => (
@@ -1674,10 +1706,37 @@ export default function RequisitionDetail() {
           },
         ]
       : []),
+    // The organizer review's Status column: what happened to the line, its details, and (for someone who can act) the ⋯ menu.
+    ...(reviewCtl.active
+      ? [
+          {
+            key: 'review_actions',
+            header: t('req.review.state'),
+            // Room for the chips on the left and the arrow and ⋯ on the right, so they stay in one line on every row
+            minWidth: '170px',
+            mobileFullWidth: true,
+            render: (l: ReqLine) => <ReviewActionsCell ctl={reviewCtl} line={l} />,
+          },
+        ]
+      : []),
     {
       key: 'total',
       header: t('req.detail.total'),
       render: (l) => {
+        // During the organizer review the purchase beside it is what counts, not the estimate
+        if (reviewCtl.active) {
+          const bought = reviewLineTotals(l)
+          if (bought.length > 0)
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {bought.map((b) => (
+                  <span key={b.currency} style={{ fontSize: '13px', fontWeight: 600 }}>
+                    {fmtN(b.amount)} {b.currency}
+                  </span>
+                ))}
+              </div>
+            )
+        }
         const fromStock = (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
         if (fromStock) {
           return (
@@ -1733,6 +1792,21 @@ export default function RequisitionDetail() {
     ...(marketEntry ? ['market_price', 'handled_by'] : []),
     ...(verifyEntry ? ['verified_price'] : []),
     ...(invEntry ? ['qty_from_stock'] : []),
+    // The organizer review is done in these two columns, so neither can be switched off while it is on.
+    ...(reviewCtl.active ? ['purchases', 'review_actions'] : []),
+  ]
+  // During the review the table is about what was bought, so the pricing columns of the earlier steps start switched off
+  // (the Columns menu brings them back, and a person's own choice always wins).
+  // The simplified review (playbook #121) also starts without Handled by, From stock and Notes: the Status column and the line's
+  // details say what matters, and the Columns menu still brings every one back.
+  const REVIEW_QUIET_COLUMNS = [
+    'inventory_cost',
+    'store_price',
+    'market_price',
+    'verified_price',
+    'handled_by',
+    'qty_from_stock',
+    'notes',
   ]
   const optionalLineColumns = [
     'handled_by',
@@ -1742,6 +1816,8 @@ export default function RequisitionDetail() {
     'market_price',
     'verified_price',
     'purchases',
+    // Notes can be switched off only during the review (every other stage keeps it always on)
+    ...(reviewCtl.active ? ['notes'] : []),
   ]
   const lineViewOptions = lineColumns
     .filter((c) => lockedLineColumns.includes(c.key) || optionalLineColumns.includes(c.key))
@@ -1749,7 +1825,12 @@ export default function RequisitionDetail() {
       key: c.key,
       label: c.header,
       locked: lockedLineColumns.includes(c.key),
-      defaultOn: c.key === 'inventory_cost' ? req.status !== 'draft' : true,
+      defaultOn:
+        reviewCtl.active && REVIEW_QUIET_COLUMNS.includes(c.key)
+          ? false
+          : c.key === 'inventory_cost'
+            ? req.status !== 'draft'
+            : true,
     }))
   const lineViewOn = (o: (typeof lineViewOptions)[number]) =>
     o.locked || linesView.isOn(o.key, o.defaultOn)
@@ -2211,12 +2292,9 @@ export default function RequisitionDetail() {
       )}
 
       {/* The organizer review (migration 329): between Items Bought and Sourcing the organizer double-checks what was bought. */}
-      {(req.status === 'organizer_review' || req.status === 'review_approval') && (
-        <OrganizerReviewPanel
-          requisition={req}
-          barSlot={reviewBarSlot}
-          onChanged={() => void refetch()}
-        />
+      {reviewCtl.active && <OrganizerReviewPanel ctl={reviewCtl} barSlot={reviewBarSlot} />}
+      {photoPip.win && reviewCtl.active && (
+        <PhotoPipPortal win={photoPip.win} requisitionId={req.id} />
       )}
 
       {/* The lines (and the other tabs) take the full width. Under them, also full width, come the cards about
@@ -2277,174 +2355,228 @@ export default function RequisitionDetail() {
               <div
                 style={{
                   display: 'flex',
-                  justifyContent: 'flex-end',
+                  justifyContent: reviewCtl.active ? 'space-between' : 'flex-end',
+                  alignItems: 'flex-start',
+                  gap: '12px',
                   marginBottom: isPhone ? '8px' : '12px',
                 }}
               >
-                <ColumnsMenu
-                  items={lineViewOptions.map((o) => ({
-                    key: o.key,
-                    label: o.label,
-                    on: lineViewOn(o),
-                    locked: o.locked,
-                  }))}
-                  onToggle={(key, on) => {
-                    const o = lineViewOptions.find((v) => v.key === key)
-                    if (o) linesView.setColumn(key, on, o.defaultOn)
-                  }}
-                  onReset={linesView.resetColumns}
-                  canReset={linesView.customized}
-                  note={t('req.detail.linesAlwaysVisible')}
-                />
+                {/* During the review: how many items, how many changed or added, and a chip for what was removed. */}
+                {reviewCtl.active && (
+                  <div
+                    style={{
+                      minWidth: 0,
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <ReviewSummaryStrip ctl={reviewCtl} />
+                    {!isPhone && (
+                      <OpenPhotosButton requisitionId={req.id} onOpenFloating={photoPip.open} />
+                    )}
+                  </div>
+                )}
+                {!(isPhone && reviewCtl.active) && (
+                  <ColumnsMenu
+                    items={lineViewOptions.map((o) => ({
+                      key: o.key,
+                      label: o.label,
+                      on: lineViewOn(o),
+                      locked: o.locked,
+                    }))}
+                    onToggle={(key, on) => {
+                      const o = lineViewOptions.find((v) => v.key === key)
+                      if (o) linesView.setColumn(key, on, o.defaultOn)
+                    }}
+                    onReset={linesView.resetColumns}
+                    canReset={linesView.customized}
+                    note={t('req.detail.linesAlwaysVisible')}
+                  />
+                )}
               </div>
-              <Table
-                columns={shownLineColumns}
-                mobileLayout="fields"
-                data={req.lines}
-                rowKey="id"
-                getRowStyle={(l) => {
-                  // Currently checked for the reject box in progress — takes
-                  // priority over an older, already-resolved-away flag.
-                  if (l.id in flaggedLines) {
-                    return {
-                      borderInlineStart: `4px solid ${theme.accent}`,
-                      background: `${theme.accent}0c`,
+              {/* On a phone the review is a compact card per line and a sheet for each line, not the table. */}
+              {isPhone && reviewCtl.active && (
+                <ReviewPhoneList
+                  ctl={reviewCtl}
+                  renderNotes={(rl) => {
+                    const l = req.lines.find((x) => x.id === rl.id)
+                    if (!l) return null
+                    return (
+                      <LineNoteButton
+                        comments={lineComments[l.id] ?? []}
+                        onClick={() => {
+                          openLineNote(l)
+                        }}
+                      />
+                    )
+                  }}
+                />
+              )}
+              {!(isPhone && reviewCtl.active) && (
+                <Table
+                  columns={shownLineColumns}
+                  mobileLayout="fields"
+                  data={req.lines}
+                  rowKey="id"
+                  getRowStyle={(l) => {
+                    // Currently checked for the reject box in progress — takes
+                    // priority over an older, already-resolved-away flag.
+                    if (l.id in flaggedLines || l.id in reviewCtl.flagged) {
+                      return {
+                        borderInlineStart: `4px solid ${theme.accent}`,
+                        background: `${theme.accent}0c`,
+                      }
                     }
-                  }
-                  if (!l.flag_reason || l.flag_resolved_at)
-                    return isStaleLine(l)
-                      ? {
-                          borderInlineStart: `4px solid ${theme.warning}`,
-                          background: `${theme.warning}12`,
-                        }
-                      : {}
-                  const open = !l.flag_addressed_at
-                  const color = open ? theme.danger : theme.warning
-                  return { borderInlineStart: `4px solid ${color}`, background: `${color}0c` }
-                }}
-                renderExpanded={(l) => {
-                  const hasOpenFlag = !!l.flag_reason && !l.flag_resolved_at
-                  const isComposing = l.id in flaggedLines
-                  if (!hasOpenFlag && !isComposing) return null
-                  const open = hasOpenFlag && !l.flag_addressed_at
-                  const color = open ? theme.danger : theme.warning
-                  // Whoever could have created a flag from that same stage may
-                  // resolve it — mirrors resolveLineFlag's own backend gate
-                  // exactly (procurement_2nd position holder for
-                  // price_verification-origin, dept-head/approver/admin for
-                  // pending_approval-origin).
-                  const canResolve =
-                    (l.flagged_from_status === 'price_verification' &&
-                      (isSystemLevel || canVerifyPrice)) ||
-                    (l.flagged_from_status === 'pending_approval' && (isSystemLevel || canApprove))
-                  // Stacked (not side-by-side) deliberately — this cell is
-                  // colSpan'd across every column, so its rendered width matches
-                  // the table's full (often wider-than-viewport, horizontally-
-                  // scrolled) width, not the visible card. A flex row with
-                  // justifyContent:'space-between' would push the Resolve button
-                  // out past the visible area, reachable only by scrolling right
-                  // with no hint to do so.
-                  return (
-                    <div>
-                      {hasOpenFlag && (
-                        <div style={{ marginBottom: isComposing ? '10px' : 0 }}>
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              marginBottom: '4px',
-                            }}
-                          >
-                            <span
+                    if (!l.flag_reason || l.flag_resolved_at)
+                      return isStaleLine(l)
+                        ? {
+                            borderInlineStart: `4px solid ${theme.warning}`,
+                            background: `${theme.warning}12`,
+                          }
+                        : {}
+                    const open = !l.flag_addressed_at
+                    const color = open ? theme.danger : theme.warning
+                    return { borderInlineStart: `4px solid ${color}`, background: `${color}0c` }
+                  }}
+                  renderExpanded={(l) => {
+                    // During the review a line opens to its details (what changed, receipts, stock); flags do not apply there.
+                    if (reviewCtl.active)
+                      return reviewCtl.expanded.includes(l.id) ? (
+                        <ReviewLineDetails ctl={reviewCtl} line={l} />
+                      ) : null
+                    const hasOpenFlag = !!l.flag_reason && !l.flag_resolved_at
+                    const isComposing = l.id in flaggedLines
+                    if (!hasOpenFlag && !isComposing) return null
+                    const open = hasOpenFlag && !l.flag_addressed_at
+                    const color = open ? theme.danger : theme.warning
+                    // Whoever could have created a flag from that same stage may
+                    // resolve it — mirrors resolveLineFlag's own backend gate
+                    // exactly (procurement_2nd position holder for
+                    // price_verification-origin, dept-head/approver/admin for
+                    // pending_approval-origin).
+                    const canResolve =
+                      (l.flagged_from_status === 'price_verification' &&
+                        (isSystemLevel || canVerifyPrice)) ||
+                      (l.flagged_from_status === 'pending_approval' &&
+                        (isSystemLevel || canApprove))
+                    // Stacked (not side-by-side) deliberately — this cell is
+                    // colSpan'd across every column, so its rendered width matches
+                    // the table's full (often wider-than-viewport, horizontally-
+                    // scrolled) width, not the visible card. A flex row with
+                    // justifyContent:'space-between' would push the Resolve button
+                    // out past the visible area, reachable only by scrolling right
+                    // with no hint to do so.
+                    return (
+                      <div>
+                        {hasOpenFlag && (
+                          <div style={{ marginBottom: isComposing ? '10px' : 0 }}>
+                            <div
                               style={{
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                padding: '2px 8px',
-                                borderRadius: '999px',
-                                background: `${color}18`,
-                                color,
-                                border: `1px solid ${color}40`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                marginBottom: '4px',
                               }}
                             >
-                              {open ? t('req.detail.flagged') : t('req.detail.addressedAwaitingConfirmation')}
-                            </span>
-                            <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                              {t('req.detail.flaggedByDuring', {
-                                name: l.flagged_by_name ?? t('req.detail.someone'),
-                                stage: getRequisitionStatusLabel(
-                                  l.flagged_from_status === 'price_verification'
-                                    ? 'price_verification'
-                                    : 'pending_approval',
-                                ),
-                              })}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              color: theme.textPrimary,
-                              marginBottom: canResolve && !open ? '8px' : 0,
-                            }}
-                          >
-                            {l.flag_reason}
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            {canResolve && !open && (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                loading={lResolveFlag}
-                                onClick={() => void resolveLineFlag({ variables: { lineId: l.id } })}
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.05em',
+                                  padding: '2px 8px',
+                                  borderRadius: '999px',
+                                  background: `${color}18`,
+                                  color,
+                                  border: `1px solid ${color}40`,
+                                }}
                               >
-                                {t('req.detail.resolve')}
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setCommentModal({
-                                  lineId: l.id,
-                                  description: l.description || l.product_name || '',
-                                })
+                                {open
+                                  ? t('req.detail.flagged')
+                                  : t('req.detail.addressedAwaitingConfirmation')}
+                              </span>
+                              <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                                {t('req.detail.flaggedByDuring', {
+                                  name: l.flagged_by_name ?? t('req.detail.someone'),
+                                  stage: getRequisitionStatusLabel(
+                                    l.flagged_from_status === 'price_verification'
+                                      ? 'price_verification'
+                                      : 'pending_approval',
+                                  ),
+                                })}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: '13px',
+                                color: theme.textPrimary,
+                                marginBottom: canResolve && !open ? '8px' : 0,
                               }}
                             >
-                              {(lineComments[l.id] ?? []).length > 0
-                                ? t('req.detail.replyCount', { count: (lineComments[l.id] ?? []).length })
-                                : t('req.detail.reply')}
-                            </Button>
+                              {l.flag_reason}
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              {canResolve && !open && (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  loading={lResolveFlag}
+                                  onClick={() =>
+                                    void resolveLineFlag({ variables: { lineId: l.id } })
+                                  }
+                                >
+                                  {t('req.detail.resolve')}
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setCommentModal({
+                                    lineId: l.id,
+                                    description: l.description || l.product_name || '',
+                                  })
+                                }}
+                              >
+                                {(lineComments[l.id] ?? []).length > 0
+                                  ? t('req.detail.replyCount', {
+                                      count: (lineComments[l.id] ?? []).length,
+                                    })
+                                  : t('req.detail.reply')}
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      {isComposing && (
-                        <div>
-                          <div
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: theme.accent,
-                              marginBottom: '4px',
-                            }}
-                          >
-                            {t('req.detail.flaggingThisLineRequiredToReject')}
+                        )}
+                        {isComposing && (
+                          <div>
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: theme.accent,
+                                marginBottom: '4px',
+                              }}
+                            >
+                              {t('req.detail.flaggingThisLineRequiredToReject')}
+                            </div>
+                            <Textarea
+                              value={flaggedLines[l.id] ?? ''}
+                              onChange={(e) => {
+                                setFlaggedLines((prev) => ({ ...prev, [l.id]: e.target.value }))
+                              }}
+                              placeholder={t('req.detail.whatSWrongWithThisLine')}
+                              rows={2}
+                            />
                           </div>
-                          <Textarea
-                            value={flaggedLines[l.id] ?? ''}
-                            onChange={(e) => {
-                              setFlaggedLines((prev) => ({ ...prev, [l.id]: e.target.value }))
-                            }}
-                            placeholder={t('req.detail.whatSWrongWithThisLine')}
-                            rows={2}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )
-                }}
-              />
+                        )}
+                      </div>
+                    )
+                  }}
+                />
+              )}
             </Card>
           )}
 

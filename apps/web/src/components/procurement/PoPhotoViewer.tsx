@@ -11,6 +11,7 @@ import { Spinner } from '../ui/Spinner'
 import { ActionButton } from '../ui/ActionButton'
 import { ENTITY_ATTACHMENTS_QUERY, FILE_DOWNLOAD_URL_QUERY } from '../../graphql/hr'
 import { PO_PHOTOS_QUERY } from '../../graphql/procurement'
+import { REQUISITION_PHOTOS_QUERY } from '../../graphql/requisitions'
 import { clampScale, saveViewerGeometry, stepScale, windowGeometry } from '../../lib/poPhotoViewer'
 
 type GroupKey = 'buyer' | 'vendor' | 'materials' | 'delivery' | 'other'
@@ -55,6 +56,20 @@ interface PoPhotosData {
   } | null
 }
 
+interface RequisitionPhotosData {
+  requisition: {
+    id: string
+    requisition_number: string
+    lines: {
+      id: string
+      line_number: number
+      description: string | null
+      product_name: string | null
+      purchases: { id: string; vendor_name: string | null; qty: number | string }[]
+    }[]
+  } | null
+}
+
 interface AttachmentsData {
   entityAttachments: {
     id: string
@@ -86,15 +101,28 @@ export function attachmentGroup(sourceEntityType: string | null): GroupKey {
 }
 
 interface PoPhotoViewerProps {
-  poId: string
+  /** The purchase order whose pictures are shown. Leave out when a requisition is given instead. */
+  poId?: string
+  /**
+   * A requisition in its organizer review: no purchase order exists yet, so the pictures are the receipts the buyers attached to
+   * each purchase, grouped as buyer receipts.
+   */
+  requisitionId?: string
   /** The window this viewer is drawn into (keys, focus and resize are listened for there). The route's own window by default. */
   win?: Window
   /** Remember where the person put the window (a pop-up window only: a floating picture-in-picture window is placed by the browser). */
   saveGeometry?: boolean
 }
 
-export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPhotoViewerProps) {
-  const id = poId
+export function PoPhotoViewer({
+  poId,
+  requisitionId,
+  win = window,
+  saveGeometry = false,
+}: PoPhotoViewerProps) {
+  const id = poId ?? ''
+  const reqId = requisitionId ?? ''
+  const forRequisition = reqId !== ''
   const { t } = useTranslation()
   const { theme } = useTheme()
   const rtl = useIsRtl()
@@ -102,19 +130,60 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
 
   const photosQuery = useQuery<PoPhotosData>(PO_PHOTOS_QUERY, {
     variables: { id },
-    skip: !id,
+    skip: !id || forRequisition,
     fetchPolicy: 'network-only',
   })
   const attachmentsQuery = useQuery<AttachmentsData>(ENTITY_ATTACHMENTS_QUERY, {
     variables: { entityType: 'purchase_order', entityId: id },
-    skip: !id,
+    skip: !id || forRequisition,
+    fetchPolicy: 'network-only',
+  })
+  const requisitionQuery = useQuery<RequisitionPhotosData>(REQUISITION_PHOTOS_QUERY, {
+    variables: { id: reqId },
+    skip: !forRequisition,
     fetchPolicy: 'network-only',
   })
 
   // Signed links of the attached files, fetched one by one (a link is short-lived; see REFRESH_AFTER_MS)
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({})
   const [loadedAt, setLoadedAt] = useState(() => Date.now())
-  const attachments = attachmentsQuery.data?.entityAttachments
+  // A requisition has no attachments of its own: its receipts hang on each purchase, read one by one (a few per order)
+  const [purchaseAttachments, setPurchaseAttachments] = useState<
+    AttachmentsData['entityAttachments']
+  >([])
+  const requisition = requisitionQuery.data?.requisition
+  useEffect(() => {
+    if (!requisition) return
+    let cancelled = false
+    const jobs = requisition.lines.flatMap((line) =>
+      line.purchases.map(async (p) => {
+        const label = `#${line.line_number} ${line.description ?? line.product_name ?? ''}`.trim()
+        try {
+          const res = await client.query<AttachmentsData>({
+            query: ENTITY_ATTACHMENTS_QUERY,
+            variables: { entityType: 'po_line_purchase', entityId: p.id },
+            fetchPolicy: 'network-only',
+          })
+          return res.data.entityAttachments.map((a) => ({
+            ...a,
+            label: a.label ?? (p.vendor_name ? `${label} · ${p.vendor_name}` : label),
+            sourceEntityType: 'po_line_purchase',
+          }))
+        } catch {
+          return []
+        }
+      }),
+    )
+    void Promise.all(jobs).then((lists) => {
+      if (!cancelled) setPurchaseAttachments(lists.flat())
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [requisition, client, loadedAt])
+  const attachments = forRequisition
+    ? purchaseAttachments
+    : attachmentsQuery.data?.entityAttachments
 
   useEffect(() => {
     if (!attachments) return
@@ -144,6 +213,8 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
   }, [attachments, client, loadedAt])
 
   const po = photosQuery.data?.purchaseOrder
+  const docNumber = forRequisition ? requisition?.requisition_number : po?.po_number
+  const mainQuery = forRequisition ? requisitionQuery : photosQuery
   const photos = useMemo<ViewerPhoto[]>(() => {
     const list: ViewerPhoto[] = []
     for (const a of attachments ?? []) {
@@ -209,8 +280,8 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
 
   // the window's name in the tab / title bar
   useEffect(() => {
-    if (po) win.document.title = `${po.po_number} · ${t('po.photoViewer.title')}`
-  }, [po, t, win])
+    if (docNumber) win.document.title = `${docNumber} · ${t('po.photoViewer.title')}`
+  }, [docNumber, t, win])
 
   // Remember where the person put this window (second screen, size) for the next time it is opened
   useEffect(() => {
@@ -235,9 +306,13 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
 
   const reload = useCallback(() => {
     setLoadedAt(Date.now())
-    void photosQuery.refetch()
-    void attachmentsQuery.refetch()
-  }, [photosQuery, attachmentsQuery])
+    if (forRequisition) {
+      void requisitionQuery.refetch()
+    } else {
+      void photosQuery.refetch()
+      void attachmentsQuery.refetch()
+    }
+  }, [forRequisition, requisitionQuery, photosQuery, attachmentsQuery])
 
   // A window left on a second screen for an hour holds expired links: bring them back when it is clicked into again
   useEffect(() => {
@@ -336,7 +411,7 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
     >
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
-          {po ? `${po.po_number} · ` : ''}
+          {docNumber ? `${docNumber} · ` : ''}
           {t('po.photoViewer.title')}
         </div>
         {selected && (
@@ -365,7 +440,7 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
     </header>
   )
 
-  if (photosQuery.loading && !po) {
+  if (mainQuery.loading && !docNumber) {
     return (
       <div style={{ minHeight: '100vh', background: theme.bgCanvas, color: theme.textPrimary }}>
         {header}
@@ -379,7 +454,7 @@ export function PoPhotoViewer({ poId, win = window, saveGeometry = false }: PoPh
     )
   }
 
-  if (photosQuery.error && !po) {
+  if (mainQuery.error && !docNumber) {
     return (
       <div style={{ minHeight: '100vh', background: theme.bgCanvas, color: theme.textPrimary }}>
         {header}

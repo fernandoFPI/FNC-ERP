@@ -94,10 +94,10 @@ describe('My Queue and the organizer review', () => {
     expect(r.getByText('Organizer')).toBeInTheDocument()
   })
 
-  it('words the PO Admin\'s row: "Approve the changes", for the PO Admin, in the status "PO Admin approval"', async () => {
+  it('words the PO Admin\'s row: "Approve the changes", for the PO Admin, in the status "Re-approval"', async () => {
     await open()
     const r = within(rowOf('REQ-APPROVAL'))
-    expect(r.getByText('PO Admin approval')).toBeInTheDocument()
+    expect(r.getByText('Re-approval')).toBeInTheDocument()
     expect(r.getByText('Approve the changes')).toBeInTheDocument()
     expect(r.getByText('PO Admin')).toBeInTheDocument()
   })

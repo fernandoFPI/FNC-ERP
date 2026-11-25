@@ -263,6 +263,19 @@ import {
   summarisePosByStatus,
 } from '../../../lib/projectPoSummary'
 import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
+import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
+import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
+import { ProjectRequisitionsList } from '../../../components/projects/ProjectRequisitionsList'
+import { StatusFilterChips } from '../../../components/projects/StatusFilterChips'
+import { useStatusFilter } from '../../../hooks/useStatusFilter'
+import {
+  PO_STATUS_ORDER,
+  effectiveSelection,
+  filterByStatus,
+  statusOptions,
+  toggleStatus,
+} from '../../../lib/projectProcurementFilter'
+import { getPOStatusLabel, getPOStatusVariant } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
@@ -416,9 +429,13 @@ export default function ProjectDetail() {
   })
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [tab, setTab] = useState('overview')
-  const [procSection, setProcSection] = useState<'purchase_orders' | 'manufacturing' | 'store_out'>(
-    'purchase_orders',
-  )
+  const [procSection, setProcSection] = useState<
+    'purchase_orders' | 'requisitions' | 'manufacturing' | 'store_out'
+  >('purchase_orders')
+  // The statuses ticked in the Purchase Orders and Requisitions filters of the Procurement tab, kept for the browser tab and per
+  // project, so opening a purchase order from a filtered list and coming back keeps the filter (playbook #70, #126).
+  const [poStatusFilter, setPoStatusFilter] = useStatusFilter(`project-proc-po:${id ?? ''}`)
+  const [reqStatusFilter, setReqStatusFilter] = useStatusFilter(`project-proc-req:${id ?? ''}`)
   const [editStage, setEditStage] = useState<Stage | null>(null)
   const [quickUpdateStage] = useMutation<UpdateProjectStageMutation, UpdateProjectStageMutationVariables>(UPDATE_PROJECT_STAGE, {
     onCompleted: () => void refetch(),
@@ -579,6 +596,17 @@ export default function ProjectDetail() {
     skip: !id || tab !== 'procurement',
     fetchPolicy: 'cache-and-network',
   })
+  // The project's requisitions (Procurement > Requisitions). Asked for only while the Procurement tab is open and only by someone
+  // who may open the Requisitions page (the same key that guards its route), so this tab never shows more than that page would.
+  const canSeeRequisitions = can('procurement.po.view')
+  const { data: reqListData } = useQuery<RequisitionsQuery, RequisitionsQueryVariables>(
+    REQUISITIONS_QUERY,
+    {
+      variables: { projectId: id },
+      skip: !id || tab !== 'procurement' || !canSeeRequisitions,
+      fetchPolicy: 'cache-and-network',
+    },
+  )
   const { data: miData } = useQuery<MaterialIssuesQuery, MaterialIssuesQueryVariables>(MATERIAL_ISSUES_QUERY, {
     variables: { projectId: id },
     skip: !id || tab !== 'procurement' || procSection !== 'store_out',
@@ -5156,8 +5184,38 @@ export default function ProjectDetail() {
                   cancelled: 'danger',
                 }
                 const storeOuts = (miData?.materialIssues ?? []) as Record<string, unknown>[]
+                const projectRequisitions = reqListData?.requisitions ?? []
+                // The Purchase Orders status filter: one chip per status that occurs (rejected included), a remembered status that no
+                // PO carries any more is dropped, and nothing ticked shows every PO.
+                const poStatusOf = (po: Record<string, unknown>) => String(po.status ?? '')
+                const poOptions = statusOptions(
+                  recentPos,
+                  poStatusOf,
+                  PO_STATUS_ORDER,
+                  getPOStatusLabel,
+                )
+                const poSelected = effectiveSelection(poStatusFilter, poOptions)
+                const shownPos = filterByStatus(recentPos, poStatusOf, poSelected)
+                // The same name and colour the filter chip and the PO page use for the status (the row used to print the raw word).
+                const poStatusBadge = (po: Record<string, unknown>) => {
+                  const status = poStatusOf(po)
+                  return status ? (
+                    <Badge variant={getPOStatusVariant(status)}>{getPOStatusLabel(status)}</Badge>
+                  ) : (
+                    <Badge variant="neutral">—</Badge>
+                  )
+                }
                 const subNav: { key: typeof procSection; label: string; count: number }[] = [
                   { key: 'purchase_orders', label: t('proj.detail.purchaseOrders'), count: recentPos.length },
+                  ...(canSeeRequisitions
+                    ? [
+                        {
+                          key: 'requisitions' as const,
+                          label: t('proj.detail.requisitions'),
+                          count: projectRequisitions.length,
+                        },
+                      ]
+                    : []),
                   { key: 'manufacturing', label: t('proj.detail.manufacturingRequests'), count: mrs.length },
                   { key: 'store_out', label: t('proj.detail.storeOut'), count: storeOuts.length },
                 ]
@@ -5209,7 +5267,20 @@ export default function ProjectDetail() {
                             marginBottom: '16px',
                           }}
                         >
-                          <span style={{ fontSize: '13px', color: theme.textMuted }}>{t('proj.detail.purchaseOrder2', { count: recentPos.length })}</span>
+                          <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                            {t('proj.detail.purchaseOrder2', { count: recentPos.length })}
+                            {poSelected.length > 0 && (
+                              <span
+                                data-testid="po-showing-of"
+                                style={{ marginInlineStart: '8px' }}
+                              >
+                                {t('proj.detail.showingOf', {
+                                  shown: shownPos.length,
+                                  total: recentPos.length,
+                                })}
+                              </span>
+                            )}
+                          </span>
                           {canEdit.procurement && (
                             <Button
                               variant="primary"
@@ -5222,6 +5293,17 @@ export default function ProjectDetail() {
                             </Button>
                           )}
                         </div>
+                        <StatusFilterChips
+                          options={poOptions}
+                          selected={poSelected}
+                          total={recentPos.length}
+                          onToggle={(value) => {
+                            setPoStatusFilter(toggleStatus(poSelected, value))
+                          }}
+                          onClear={() => {
+                            setPoStatusFilter([])
+                          }}
+                        />
                         {recentPos.length === 0 && (
                           <div
                             style={{
@@ -5234,10 +5316,10 @@ export default function ProjectDetail() {
                             {t('proj.detail.noPurchaseOrdersForThisProject')}
                           </div>
                         )}
-                        {recentPos.length > 0 &&
+                        {shownPos.length > 0 &&
                           (isPhone ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {recentPos.map((po, i) => (
+                              {shownPos.map((po, i) => (
                                 <div
                                   key={String(po.id ?? i)}
                                   onClick={() => { navigate(`/procurement/purchase-orders/${String(po.id)}`); }}
@@ -5282,7 +5364,7 @@ export default function ProjectDetail() {
                                             </span>
                                           ))}
                                     </div>
-                                    <Badge variant="neutral">{String(po.status ?? '—')}</Badge>
+                                    {poStatusBadge(po)}
                                   </div>
                                 </div>
                               ))}
@@ -5320,7 +5402,7 @@ export default function ProjectDetail() {
                                   </div>
                                 ))}
                               </div>
-                              {recentPos.map((po, i) => (
+                              {shownPos.map((po, i) => (
                                 <div
                                   key={String(po.id ?? i)}
                                   onClick={() => { navigate(`/procurement/purchase-orders/${String(po.id)}`); }}
@@ -5330,7 +5412,7 @@ export default function ProjectDetail() {
                                     alignItems: 'center',
                                     padding: '10px 16px',
                                     borderBottom:
-                                      i < recentPos.length - 1
+                                      i < shownPos.length - 1
                                         ? `1px solid ${theme.border}`
                                         : 'none',
                                     cursor: 'pointer',
@@ -5372,7 +5454,7 @@ export default function ProjectDetail() {
                                         ))}
                                   </div>
                                   <div>
-                                    <Badge variant="neutral">{String(po.status ?? '—')}</Badge>
+                                    {poStatusBadge(po)}
                                   </div>
                                   <div
                                     style={{
@@ -5398,6 +5480,23 @@ export default function ProjectDetail() {
                             </div>
                           ))}
                       </div>
+                    )}
+
+                    {/* Requisitions of this project */}
+                    {procSection === 'requisitions' && canSeeRequisitions && (
+                      <ProjectRequisitionsList
+                        requisitions={projectRequisitions}
+                        canCreate={canEdit.procurement}
+                        onNew={() => {
+                          navigate(`/procurement/requisitions/new?projectId=${id}`)
+                        }}
+                        onOpen={(reqId) => {
+                          navigate(`/procurement/requisitions/${reqId}`)
+                        }}
+                        isPhone={isPhone}
+                        selectedStatuses={reqStatusFilter}
+                        onSelectedStatusesChange={setReqStatusFilter}
+                      />
                     )}
 
                     {/* Manufacturing Requests */}

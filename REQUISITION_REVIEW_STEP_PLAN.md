@@ -16,7 +16,7 @@ purchase orders. If he changes anything the requisition needs the PO Admin's app
   altogether (approved -> sourcing, all covered from stock) is unchanged: there is no Items Bought step to follow.
 
 ## Mine (to confirm)
-- Approver = PO Admin position holders and procurement admins, never the organizer himself.
+- Approver = PO Admin position holders and procurement admins; since 2026-11-25 the organizer too when he is one of them (playbook #122).
 - New statuses `organizer_review`, `review_approval`; both cancellable; the fork of child POs moves from Finish Buying to
   Confirm / Approve. Finish Buying (action `finish_buying`) now means "buying is finished, moves to Organizer Review".
 - Send back to Items Bought may remove no purchase at all (then the buyers just fix a receipt and press Finish Buying).
@@ -33,3 +33,4 @@ purchase orders. If he changes anything the requisition needs the PO Admin's app
 - The progress bar still shows one "Buy" phase for items bought, the review, the approval and sourcing.
 - No reminder when an organizer leaves a review waiting (median 31 hours at Items Bought today).
 - Dropping `user_purchase_review_marks` and the three columns of `po_line_purchases` (migration 316) in a later migration.
+- [x] 6. (2026-11-24, user's request) The review's own table is merged into the requisition's Lines table: one row per line, the Bought cell holds each purchase (vendor, quantity, price, total, "was", receipts, Change), a "Status" column holds the whole-line actions, the slim card above keeps title, reason, totals and Add an item, and what was removed is listed under the table. No server change, no gate change. Playbook #119.
