@@ -257,7 +257,7 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText(/\+ 10\.72 USD \(from stock\)/)).toBeInTheDocument()
   })
 
-  it('a partially-from-stock line keeps showing its real purchase total, not the store-price reference', async () => {
+  it('a partially-from-stock line totals only what is still to buy, with the stock part shown beside it (playbook #127)', async () => {
     mockReq({
       status: 'pending_approval',
       lines: [
@@ -277,15 +277,18 @@ describe('RequisitionDetail', () => {
           store_price_currency: 'USD',
           market_price: '20',
           verified_price: '20',
-          total: '200',
+          // (10 ordered - 4 from stock) x 20 = 120: the server's total is the amount still to purchase
+          total: '120',
           purchases: [],
         },
       ],
     })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
-    expect(screen.getByText(/200 IQD/)).toBeInTheDocument()
-    expect(screen.queryByText(/\(from stock\)/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/120 IQD/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/200 IQD/)).not.toBeInTheDocument()
+    // the shelf part: 4 x 15 USD store price, drawn under the line's total
+    expect(screen.getByTestId('line-from-stock-value')).toHaveTextContent('+ 60 USD (from stock)')
   })
 
   it('draft: shows Submit for inventory check for the organizer', async () => {
