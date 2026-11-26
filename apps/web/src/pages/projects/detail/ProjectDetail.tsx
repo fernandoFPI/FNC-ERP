@@ -240,7 +240,6 @@ import { TabBar } from '../../../components/ui/TabBar'
 import { RevisionHistory } from '../../../components/ui/RevisionHistory'
 import { ProjectStatusBar } from '../../../components/projects/ProjectStatusBar'
 import { StageEditDrawer } from '../../../components/projects/StageEditDrawer'
-import { ProjectCostSummaryCards } from '../../../components/finance/ProjectCostSummaryCards'
 import { ManufacturingRequestForm } from '../components/ManufacturingRequestForm'
 import { formatCurrency } from '../../../lib/format'
 import { api } from '../../../lib/axios'
@@ -258,11 +257,13 @@ import { projectFileTabs, visibleProjectFiles, countByTab } from '../../../lib/p
 import {
   approvedOrLaterAmount,
   countApprovedOrLater,
-  currenciesWithMoney,
   pendingApprovalAmount,
   poAmountLines,
   summarisePosByStatus,
 } from '../../../lib/projectPoSummary'
+import { buildFinancialSummary } from '../../../lib/projectFinancialSummary'
+import { ProjectFinancialSummaryCard } from '../../../components/projects/ProjectFinancialSummaryCard'
+import { ProjectPoSummaryCard } from '../../../components/projects/ProjectPoSummaryCard'
 import type { ProjectFilesQuery, ProjectFilesQueryVariables } from '../../../graphql/generated'
 import type { RequisitionsQuery, RequisitionsQueryVariables } from '../../../graphql/generated'
 import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
@@ -2665,19 +2666,12 @@ export default function ProjectDetail() {
                 const ovCcy = String(cs?.currencyCode ?? p.budgetCurrency ?? 'USD')
                 const ovActual = Number(cs?.actualCosts ?? 0)
                 const ovCommitted = Number(cs?.committedCosts ?? 0)
-                const ovStoreCosts = Number(cs?.storeCosts ?? 0)
                 const ovBudget = Number(cs?.budgetAmount ?? p.budgetAmount ?? 0)
                 const ovRemaining = Number(
                   cs?.budgetRemaining ?? ovBudget - ovActual - ovCommitted,
                 )
                 const ovUtilPct = ovBudget > 0 ? Math.round((ovActual / ovBudget) * 100) : 0
                 const ovCompletion = p.overallCompletionPct ?? 0
-
-                // EAC / profit
-                const ovEAC =
-                  ovCompletion > 0 ? Math.round(ovActual / (ovCompletion / 100)) : ovBudget
-                const ovProfit = ovBudget - ovEAC
-                const ovMarginPct = ovBudget > 0 ? (ovProfit / ovBudget) * 100 : 0
 
                 // Schedule execution status
                 const today2 = new Date()
@@ -2720,22 +2714,6 @@ export default function ProjectDetail() {
                 // PO summary (lib/projectPoSummary.ts, playbook #92): one row per status that has POs, the money per
                 // currency read from the lines, cancelled and deleted POs left out of rows and total alike.
                 const poSummary = summarisePosByStatus(recentPos)
-                const poDotColour = (status: string): string =>
-                  status === 'pending_approval'
-                    ? '#f59e0b'
-                    : status === 'closed' || status === 'completed'
-                      ? theme.accent
-                      : [
-                            'draft',
-                            'inventory_check',
-                            'store_pricing',
-                            'market_pricing',
-                            'price_verification',
-                            'rejected',
-                          ].includes(status)
-                        ? theme.textMuted
-                        : '#22c55e'
-                const poTotal = poSummary.total
 
                 // Health score — Engineering is driven by overdue open RFIs
                 // (unanswered past their required date blocks engineering
@@ -2934,202 +2912,16 @@ export default function ProjectDetail() {
                       })
                     : '—'
 
-                // Financial Summary table (Table component migration)
-                interface FinancialSummaryRow {
-                  label: string
-                  val: number | null
-                  color: string
-                  bold: boolean
-                  text?: string
-                }
-                const financialSummaryRows: FinancialSummaryRow[] = [
-                  {
-                    label: t('proj.detail.approvedBudget'),
-                    val: ovBudget,
-                    color: theme.textPrimary,
-                    bold: false,
-                  },
-                  {
-                    label: t('proj.detail.committedCostInclStore'),
-                    val: ovCommitted,
-                    color: theme.textPrimary,
-                    bold: false,
-                  },
-                  ...(ovStoreCosts > 0
-                    ? [
-                        {
-                          label: t('proj.detail.storePriceComponent'),
-                          val: ovStoreCosts,
-                          color: theme.textMuted,
-                          bold: false,
-                        },
-                      ]
-                    : []),
-                  {
-                    label: t('proj.detail.remainingBudget'),
-                    val: ovBudget > 0 ? ovRemaining : null,
-                    color:
-                      ovBudget <= 0 ? theme.textMuted : ovRemaining < 0 ? '#ef4444' : '#22c55e',
-                    bold: true,
-                    ...(ovBudget > 0 ? {} : { text: t('proj.detail.noBudget') }),
-                  },
-                  {
-                    label: t('proj.detail.forecastCostAtCompletion'),
-                    val: ovEAC,
-                    color: theme.textPrimary,
-                    bold: false,
-                  },
-                  {
-                    label: t('proj.detail.expectedProfit'),
-                    val: ovProfit,
-                    color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
-                    bold: false,
-                  },
-                  {
-                    label: t('proj.detail.profitMargin'),
-                    val: null,
-                    color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
-                    bold: true,
-                    text: `${ovMarginPct.toFixed(1)}%`,
-                  },
-                ]
-                const financialSummaryColumns: Column<FinancialSummaryRow>[] = [
-                  {
-                    key: 'label',
-                    header: t('proj.detail.description'),
-                    mobilePrimary: true,
-                    render: (row) => (
-                      <span style={{ color: theme.textPrimary, fontSize: '12px' }}>
-                        {row.label}
-                      </span>
-                    ),
-                  },
-                  {
-                    key: 'value',
-                    header: t('proj.detail.amount2', { ovCcy }),
-                    mobilePriority: 1,
-                    render: (row) => (
-                      <span
-                        style={{
-                          fontVariantNumeric: 'tabular-nums',
-                          color: row.color,
-                          fontWeight: row.bold ? 700 : 400,
-                        }}
-                      >
-                        {row.text ?? (row.val != null ? formatCurrency(row.val, ovCcy) : '—')}
-                      </span>
-                    ),
-                  },
-                ]
-
-                interface PoSummaryRow {
-                  status: string
-                  label: string
-                  count: number
-                  amounts: Record<string, number>
-                }
-                const poSummaryRows: PoSummaryRow[] = poSummary.rows
-                // one line per currency that holds money: nothing is converted or added across currencies
-                const renderPoAmounts = (amounts: Record<string, number>): React.ReactNode => {
-                  const ccys = currenciesWithMoney(amounts)
-                  if (ccys.length === 0) return '—'
-                  return ccys.map((c) => (
-                    <span key={c} style={{ display: 'block' }}>
-                      {formatCurrency(amounts[c] ?? 0, c)}
-                    </span>
-                  ))
-                }
-                const poSummaryColumns: Column<PoSummaryRow>[] = [
-                  {
-                    key: 'status',
-                    header: t('proj.detail.status'),
-                    mobilePrimary: true,
-                    render: (row) => (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span
-                          style={{
-                            width: '7px',
-                            height: '7px',
-                            borderRadius: '50%',
-                            background: poDotColour(row.status),
-                            flexShrink: 0,
-                            display: 'inline-block',
-                          }}
-                        />
-                        <span style={{ color: theme.textPrimary }}>
-                          {row.label}
-                        </span>
-                      </span>
-                    ),
-                  },
-                  {
-                    key: 'count',
-                    header: t('proj.detail.qty'),
-                    mobilePriority: 1,
-                    renderHeader: () => (
-                      <span style={{ display: 'block', textAlign: 'end' }}>{t('proj.detail.qty')}</span>
-                    ),
-                    render: (row) => (
-                      <span
-                        style={{
-                          display: 'block',
-                          textAlign: 'end',
-                          color: theme.textMuted,
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {row.count}
-                      </span>
-                    ),
-                  },
-                  {
-                    key: 'amount',
-                    header: t('proj.detail.poSummaryOrdered'),
-                    mobilePriority: 2,
-                    renderHeader: () => (
-                      <span style={{ display: 'block', textAlign: 'end', whiteSpace: 'nowrap' }}>
-                        {t('proj.detail.poSummaryOrdered')}
-                      </span>
-                    ),
-                    render: (row) => (
-                      <span
-                        style={{
-                          display: 'block',
-                          textAlign: 'end',
-                          color: theme.textMuted,
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {renderPoAmounts(row.amounts)}
-                      </span>
-                    ),
-                  },
-                ]
-                const poSummaryFooter: Record<string, React.ReactNode> = {
-                  status: t('proj.detail.total'),
-                  count: (
-                    <span
-                      style={{
-                        display: 'block',
-                        textAlign: 'end',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {poTotal}
-                    </span>
-                  ),
-                  amount: (
-                    <span
-                      style={{
-                        display: 'block',
-                        textAlign: 'end',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {renderPoAmounts(poSummary.totals)}
-                    </span>
-                  ),
-                }
+                // Financial Summary and PO summary cards (components/projects): one column per currency, playbook #128.
+                // "Booked" in the PO card is the same ledger figure the Financial Summary shows as cost.
+                const financialModel = buildFinancialSummary(
+                  costSummaryArr,
+                  p.overallCompletionPct,
+                  ovCcy,
+                )
+                const bookedByCurrency: Record<string, number> = Object.fromEntries(
+                  financialModel.columns.map((c) => [c.currency, c.actual]),
+                )
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -3162,9 +2954,6 @@ export default function ProjectDetail() {
                         <strong>{t('proj.detail.cancelled')}</strong> {p.cancelReason}
                       </div>
                     )}
-
-                    {/* what the project has cost so far, per currency and kind: the same cards as the analytic account page */}
-                    <ProjectCostSummaryCards projectId={p.id} />
 
                     {/* ── Row 1: 4 cards ── */}
                     <div
@@ -3258,63 +3047,16 @@ export default function ProjectDetail() {
                       )}
 
                       {/* 2. Financial Summary */}
-                      {card(
-                        <>
-                          {ch(
-                            t('proj.detail.financialSummary'),
-                            <span
-                              style={{ fontSize: '11px', color: theme.textSecondary }}
-                              data-testid="financial-summary-ccy"
-                            >
-                              {t('proj.detail.financialSummaryCcyOnly', { currency: ovCcy })}
-                            </span>,
-                          )}
-                          <Table
-                            columns={financialSummaryColumns}
-                            data={financialSummaryRows}
-                            rowKey="label"
-                          />
-                        </>,
-                      )}
+                      <ProjectFinancialSummaryCard model={financialModel} />
 
-                      {/* 3. Purchase Order Summary */}
-                      {card(
-                        <>
-                          {ch(
-                            t('proj.detail.purchaseOrderSummary'),
-                            <button
-                              onClick={() => { setTab('procurement'); }}
-                              style={{
-                                fontSize: '11px',
-                                color: theme.accent,
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {t('proj.detail.viewAll')}
-                            </button>,
-                          )}
-                          <Table
-                            columns={poSummaryColumns}
-                            data={poSummaryRows}
-                            rowKey="status"
-                            footerRow={poSummaryFooter}
-                          />
-                          {/* what this card counts, so it is not mistaken for the project's cost (playbook #95) */}
-                          <div
-                            style={{
-                              marginTop: '10px',
-                              fontSize: '11px',
-                              lineHeight: 1.5,
-                              color: theme.textSecondary,
-                            }}
-                            data-testid="po-summary-note"
-                          >
-                            {t('proj.detail.poSummaryNote')}
-                          </div>
-                        </>,
-                      )}
+                      {/* 3. Purchase Orders: value ordered, with the cost booked under it */}
+                      <ProjectPoSummaryCard
+                        summary={poSummary}
+                        booked={bookedByCurrency}
+                        onViewAll={() => {
+                          setTab('procurement')
+                        }}
+                      />
 
                       {/* 4. Project Health */}
                       {card(
