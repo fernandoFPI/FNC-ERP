@@ -105,6 +105,45 @@ describe('the PO summary says what it counts', () => {
   })
 })
 
+// playbook #128: the Overview showed one currency's Actual Cost and no breakdown, beside a PO box that looked like cost.
+describe('the Overview says what the project has cost, in every currency', () => {
+  const overview = () => {
+    const start = src.indexOf('// ── overview-local computations')
+    const end = src.indexOf("t('proj.detail.projectHealth')")
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    return src.slice(start, end)
+  }
+
+  it('draws the same per-currency cost cards as the analytic account page, above the first row of cards', () => {
+    has("from '../../../components/finance/ProjectCostSummaryCards'")
+    const b = overview()
+    const cards = b.indexOf('<ProjectCostSummaryCards projectId={p.id} />')
+    const row1 = b.indexOf('Row 1: 4 cards')
+    expect(cards, 'the cost cards are on the Overview').toBeGreaterThan(-1)
+    expect(row1).toBeGreaterThan(cards)
+  })
+
+  it('has no single-currency Actual Cost row in the Financial Summary any more', () => {
+    const b = overview()
+    const rows = b.slice(
+      b.indexOf('const financialSummaryRows'),
+      b.indexOf('const financialSummaryColumns'),
+    )
+    expect(rows.length).toBeGreaterThan(100)
+    expect(rows.includes("t('proj.detail.actualCost')"), 'the Actual Cost row is gone').toBe(false)
+    expect(
+      rows.includes("t('proj.detail.committedCostInclStore')"),
+      'the other rows stay',
+    ).toBe(true)
+  })
+
+  it('labels the Financial Summary with the one currency it is in', () => {
+    has("t('proj.detail.financialSummaryCcyOnly', { currency: ovCcy })")
+    has('data-testid="financial-summary-ccy"')
+  })
+})
+
 describe('a project with no budget set', () => {
   it('the Remaining Budget tile says "No budget" instead of a negative number', () => {
     has('const hdrHasBudget = hdrBudget > 0')
