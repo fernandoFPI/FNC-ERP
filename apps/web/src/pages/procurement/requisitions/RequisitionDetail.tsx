@@ -362,20 +362,19 @@ const fmtN = (n: string | number | null | undefined) =>
     maximumFractionDigits: 2,
   })
 
-// Display-only — a fully-from-stock line's total_price is deliberately
-// zeroed by confirmRequisitionInventoryCheck (nothing is being purchased,
-// so nothing is owed; the item's real cost is booked to the project
-// separately, via project_cost_actuals, once the Store Out that issues it
-// is confirmed). That's correct for approval snapshots/tolerance checks,
-// which must keep meaning "amount to purchase" — but it reads as if the
-// item's value vanished entirely, so show store_price × qty here purely
-// for display, in the line's own store_price_currency (which can differ
-// from the line's currency_code).
+// Display-only — a line's total_price means the amount still TO PURCHASE: (ordered - from stock) x price
+// (services/gateway/src/lib/lineToPurchase.ts), so a line fully from stock is 0 and a line 8 of 12 from stock
+// counts only its 4 to buy (playbook #127). That is right for approval snapshots/tolerance checks, which must
+// keep meaning "amount to purchase", but it reads as if the stock part's value vanished, and the item's real
+// cost is booked to the project separately (project_cost_actuals, once the Store Out that issues it is
+// confirmed). So the value of whatever comes from stock, store_price x qty_from_stock, is shown beside the
+// total purely for display, in the line's own store_price_currency (which can differ from the line's
+// currency_code). It is drawn for a fully AND a partly covered line.
 function fromStockDisplayValue(l: ReqLine): { amount: number; currency: string } | null {
   const qty = parseFloat(l.qty) || 0
   const qtyFromStock = parseFloat(String(l.qty_from_stock ?? '0')) || 0
   const storePrice = parseFloat(String(l.store_price ?? '0')) || 0
-  if (qty <= 0 || qtyFromStock + 0.0001 < qty || storePrice <= 0) return null
+  if (qty <= 0 || qtyFromStock <= 0 || storePrice <= 0) return null
   return { amount: qtyFromStock * storePrice, currency: l.store_price_currency ?? '' }
 }
 
@@ -1737,8 +1736,10 @@ export default function RequisitionDetail() {
               </div>
             )
         }
-        const fromStock = (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
-        if (fromStock) {
+        const fromStock = fromStockDisplayValue(l)
+        const toPurchase = parseFloat(String(l.total)) || 0
+        // Fully from stock: nothing is bought, so only the value of what comes from the shelf.
+        if (fromStock && toPurchase === 0) {
           return (
             <span style={{ fontSize: '13px', color: theme.textMuted }}>
               {fmtN(fromStock.amount)} {fromStock.currency}
@@ -1747,9 +1748,23 @@ export default function RequisitionDetail() {
           )
         }
         return (
-          <span style={{ fontSize: '13px' }}>
-            {fmtN(l.total)} {l.currency_code}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '13px' }}>
+              {fmtN(l.total)} {l.currency_code}
+            </span>
+            {/* Partly from stock: the total above is only what is bought; the shelf part is shown beside it. */}
+            {fromStock && (
+              <span
+                data-testid="line-from-stock-value"
+                style={{ fontSize: '11px', color: theme.textSecondary }}
+              >
+                {t('req.detail.fromStockAmount', {
+                  amount: fmtN(fromStock.amount),
+                  currency: fromStock.currency,
+                })}
+              </span>
+            )}
+          </div>
         )
       },
     },
@@ -2108,8 +2123,7 @@ export default function RequisitionDetail() {
                 // meaning "amount to purchase").
                 const fromStockTotals = new Map<string, number>()
                 for (const l of req.lines) {
-                  const fromStock =
-                    (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
+                  const fromStock = fromStockDisplayValue(l)
                   if (fromStock) {
                     fromStockTotals.set(
                       fromStock.currency,
@@ -3642,8 +3656,7 @@ export default function RequisitionDetail() {
         (() => {
           const fromStockTotals = new Map<string, number>()
           for (const l of req.lines) {
-            const fromStock =
-              (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
+            const fromStock = fromStockDisplayValue(l)
             if (fromStock) {
               fromStockTotals.set(
                 fromStock.currency,

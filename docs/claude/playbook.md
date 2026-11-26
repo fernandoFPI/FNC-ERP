@@ -4439,3 +4439,39 @@ Don't re-derive, check these first.
     `ProjectRequisitionsList.test.tsx` (counts and order, ticking and unticking, stale statuses, one status, phone, Arabic) and
     `pages/projects/detail/__tests__/projectDetailProcurementFilterWiring.test.ts` (the Purchase Orders side at the source). Mutation-checked: 20 mutations (chip order, rejected before cancelled, stale statuses, nothing-ticked, untick, empty status, the single-status rule, All pressed, the count, a cleared filter staying stored, non-string storage, another project inheriting a filter, the Showing text, both lists ignoring the filter, the PO stale-status drop, the requisition filter memory, the PO badge colour, the per-project PO key), all killed, from a clean 72-test baseline.
     Related to #12, #25, #70, #125.
+
+127. **A line total that counted units nobody buys: "amount to purchase" has to subtract what stock covers, in every writer.**
+    NF-REQ-2026-0195 (Nishtimani Factory, at price verification), line 1: 12 ordered, 8 from inventory, market price 11 USD, Total
+    132 USD (12 x 11) for 4 units to buy. The units from the shelf were counted at the purchase price, so the requisition read 88 USD
+    too high (795 against 707; the requisition total and the approval snapshot both). The rule had been written on 15 Aug (commit
+    889d611, "a line fully covered from stock contributes 0") and only the FULLY covered case was handled: every pricing step wrote
+    `total_price = qty_ordered x price`, so a PARTLY covered line counted its whole quantity. The page's own comment already called
+    the total "amount to purchase", so code and meaning disagreed. Production held only 4 such lines (this one at price
+    verification, two at Items Bought, one cancelled), because partial coverage is rare.
+    Fix (user chose option A of two): a line's total is (qty_ordered - qty_from_stock, never below 0) x price, written once in
+    `services/gateway/src/lib/lineToPurchase.ts` (`toPurchaseQty`, `toPurchaseTotalSql`) and used by every statement that sets a
+    requisition line's total (found by grepping `total_price`, nine writers, not the one reported): the inventory check, market
+    pricing, price verification, resolve-from-stock at Items Bought, an approved edit request on a requisition, and in the organizer
+    review Take from stock, Put back, Use stock instead (and its Undo, which restores the saved value) and the quantity settlement at
+    the fork. The row the fork leaves behind (the stock or accepted-short part) is 0, since nothing on it is bought. In SQL a column
+    on the right of a SET reads the OLD row value, so the writers that change `qty_from_stock` in the same statement pass the new value
+    (`fromStock: '$1::numeric'`) instead of reading the column. The page still shows the stock part, now beside the total for a
+    partly covered line too (store price x qty from stock, "+ 60 USD (from stock)"); a fully covered line still shows only that value.
+    The PO-side writers (whole-flow POs: `applyPOEditChanges`, `confirmPOInventoryCheck`, PO pricing) were NOT changed: no live PO
+    uses that path and its lines are bought whole.
+    Not changed, and what it means for data: totals already stored on the other open lines (two at Items Bought) and the approval
+    snapshots (`requisition_approved_totals`) keep their old figures; NF-REQ-2026-0195 corrects itself when price verification is
+    submitted again (that step rewrites the total by the new rule). The over-tolerance check compares unit prices, so it was never
+    affected, and the child purchase orders are built from the purchases, so they never carried the extra units.
+    How to spot the class: a total that disagrees with qty x price of what is actually bought; "full" handled and "partial" not
+    (a CASE with only the 0 branch); a comment that says what the number means next to code that computes something else.
+    Traps met: an existing test pinned the old behaviour on purpose ("total_price is untouched, 10 x 10", "125 while 6 are still
+    bought") and two more assert 120 / 75 now; the page test that said "keeps showing its real purchase total" was rewritten, not
+    patched. A test of the whole path needs the real steps (inventory check, market pricing, verification, approval, buy, fork), which
+    is what `requisition-partial-stock-total.test.ts` drives.
+    Tests: `services/gateway/tests/requisition-partial-stock-total.test.ts` (real Postgres through the real mutations and schema, 10:
+    the rule alone, the user's case 12 / 8 / 11 = 44, the total through the schema and the approval snapshot, resolve-from-stock,
+    the fork, fully-from-stock still 0, nothing-from-stock unchanged), a block in `requisition-edit-price-stage-fields.test.ts` (3),
+    the review take-from-stock assertion, `RequisitionDetail.test.tsx`. Mutation-checked: 8 mutations (each writer back to the old
+    rule, the floor, the stock term), all killed; one survived first (the review's Take from stock) and got its assertion.
+    Related to #6 (a total with several writers), #23, #44 and #56.
