@@ -45,68 +45,19 @@ describe('purchase orders on the project page', () => {
     has('poAmountLines(po)')
   })
 
-  it('does not label the PO summary amount column or its total with the project currency', () => {
-    // only the PO summary block: the Financial Summary table elsewhere IS in the project currency and keeps its label
-    const start = src.indexOf('const poSummaryColumns')
-    const end = src.indexOf('const poSummaryFooter')
-    expect(start).toBeGreaterThan(-1)
-    expect(end).toBeGreaterThan(start)
-    const block = src.slice(start, end)
-    expect(
-      block.includes('amount2'),
-      'the PO summary amount column must not use the project-currency label',
-    ).toBe(false)
-    expect(
-      block.includes('formatCurrency(row.amount, ovCcy)'),
-      'a row amount must not be formatted in the project currency',
-    ).toBe(false)
-    expect(
-      block.includes('renderPoAmounts(row.amounts)'),
-      'rows render their money per currency',
-    ).toBe(true)
-    has('renderPoAmounts(poSummary.totals)')
+  it('draws the PO summary through its own card, which shows money per currency and never the project currency alone', () => {
+    // the card itself is tested in components/projects/__tests__/ProjectOverviewMoneyCards.test.tsx
+    has('<ProjectPoSummaryCard')
+    has('summary={poSummary}')
+    hasNot(/const poSummaryColumns/)
+    hasNot(/const poSummaryFooter/)
+    hasNot(/renderPoAmounts/)
   })
 })
 
-// playbook #95: the PO Summary card counts what was ORDERED on the project's closed POs, which is not the project's cost
-// (goods delivered to inventory cost the project nothing until issued, Store Outs and expense claims never pass through these
-// POs). The column said "Amount" and sat beside screens that show the cost ledger, so the two were read as one number.
-describe('the PO summary says what it counts', () => {
-  const block = () => {
-    const start = src.indexOf('const poSummaryColumns')
-    const end = src.indexOf('const poSummaryFooter')
-    expect(start).toBeGreaterThan(-1)
-    expect(end).toBeGreaterThan(start)
-    return src.slice(start, end)
-  }
-
-  it('heads its money column "Ordered", in the header and in the custom header, not "Amount"', () => {
-    const b = block()
-    expect(
-      b.split("t('proj.detail.poSummaryOrdered')").length - 1,
-      'header and renderHeader both say Ordered',
-    ).toBe(2)
-    expect(
-      b.includes("t('proj.detail.amount')"),
-      'the generic Amount label is gone from this column',
-    ).toBe(false)
-  })
-
-  it('draws one note under the table saying it is not the project cost', () => {
-    has("t('proj.detail.poSummaryNote')")
-    has('data-testid="po-summary-note"')
-    // the note belongs to the PO Summary card: it comes after the table and before the Project Health card
-    const note = src.indexOf("t('proj.detail.poSummaryNote')")
-    const table = src.indexOf('footerRow={poSummaryFooter}')
-    const health = src.indexOf("t('proj.detail.projectHealth')")
-    expect(table).toBeGreaterThan(-1)
-    expect(note).toBeGreaterThan(table)
-    expect(health).toBeGreaterThan(note)
-  })
-})
-
-// playbook #128: the Overview showed one currency's Actual Cost and no breakdown, beside a PO box that looked like cost.
-describe('the Overview says what the project has cost, in every currency', () => {
+// playbook #128: the Overview's two money cards are components with one column per currency (the page keeps no table of its own),
+// the PO card gets the cost booked under the total ordered from the same per-currency figures as the Financial Summary.
+describe('the Overview money cards', () => {
   const overview = () => {
     const start = src.indexOf('// ── overview-local computations')
     const end = src.indexOf("t('proj.detail.projectHealth')")
@@ -115,32 +66,33 @@ describe('the Overview says what the project has cost, in every currency', () =>
     return src.slice(start, end)
   }
 
-  it('draws the same per-currency cost cards as the analytic account page, above the first row of cards', () => {
-    has("from '../../../components/finance/ProjectCostSummaryCards'")
+  it('builds the Financial Summary from every currency of the project cost summary, not the header currency alone', () => {
     const b = overview()
-    const cards = b.indexOf('<ProjectCostSummaryCards projectId={p.id} />')
-    const row1 = b.indexOf('Row 1: 4 cards')
-    expect(cards, 'the cost cards are on the Overview').toBeGreaterThan(-1)
-    expect(row1).toBeGreaterThan(cards)
-  })
-
-  it('has no single-currency Actual Cost row in the Financial Summary any more', () => {
-    const b = overview()
-    const rows = b.slice(
-      b.indexOf('const financialSummaryRows'),
-      b.indexOf('const financialSummaryColumns'),
-    )
-    expect(rows.length).toBeGreaterThan(100)
-    expect(rows.includes("t('proj.detail.actualCost')"), 'the Actual Cost row is gone').toBe(false)
+    // compared without whitespace and trailing commas, so a formatter re-wrapping the call does not fail the pin
+    const squash = (s: string) => s.replace(/[\s]+/g, '').replace(/,\)/g, ')')
     expect(
-      rows.includes("t('proj.detail.committedCostInclStore')"),
-      'the other rows stay',
+      squash(b).includes('buildFinancialSummary(costSummaryArr,p.overallCompletionPct,ovCcy)'),
+      'the summary is built from every currency of the cost summary',
     ).toBe(true)
+    expect(b.includes('<ProjectFinancialSummaryCard model={financialModel} />')).toBe(true)
+    expect(b.includes('const financialSummaryRows'), 'no inline single-currency table').toBe(false)
   })
 
-  it('labels the Financial Summary with the one currency it is in', () => {
-    has("t('proj.detail.financialSummaryCcyOnly', { currency: ovCcy })")
-    has('data-testid="financial-summary-ccy"')
+  it('gives the PO card the cost booked per currency, taken from the Financial Summary columns', () => {
+    const b = overview()
+    expect(b.includes('financialModel.columns.map((c) => [c.currency, c.actual])')).toBe(true)
+    expect(b.includes('booked={bookedByCurrency}')).toBe(true)
+  })
+
+  it('opens the Procurement tab from the PO card', () => {
+    const b = overview()
+    const at = b.indexOf('<ProjectPoSummaryCard')
+    expect(at).toBeGreaterThan(-1)
+    expect(b.slice(at, at + 400).includes("setTab('procurement')")).toBe(true)
+  })
+
+  it('draws no per-currency cost cards of its own (they were tried and taken off)', () => {
+    expect(src.includes('ProjectCostSummaryCards')).toBe(false)
   })
 })
 
@@ -148,11 +100,6 @@ describe('a project with no budget set', () => {
   it('the Remaining Budget tile says "No budget" instead of a negative number', () => {
     has('const hdrHasBudget = hdrBudget > 0')
     has("hdrHasBudget ? formatCurrency(hdrRemain, hdrCcy) : t('proj.detail.noBudget')")
-  })
-
-  it('the Overview Remaining Budget row says so too', () => {
-    has('val: ovBudget > 0 ? ovRemaining : null')
-    has("text: t('proj.detail.noBudget')")
   })
 
   it('"Project is over budget" needs a budget', () => {
