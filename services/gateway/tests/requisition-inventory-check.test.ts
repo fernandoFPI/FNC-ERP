@@ -321,10 +321,10 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
       store_price: string
       store_price_currency: string
     }>(`SELECT total_price, in_stock, store_price, store_price_currency FROM po_lines WHERE id=$1`, [lineId])
-    // Only 3 of 10 covered — NOT fully in_stock, total_price is untouched
-    // (still needs a real price once this line reaches market pricing).
+    // Only 3 of 10 covered — NOT fully in_stock, and total_price is the amount still to purchase: the 7 not covered
+    // times the unit price (playbook #127), not the whole line. It gets its real price once it reaches market pricing.
     expect(line.rows[0]!.in_stock).toBe(false)
-    expect(parseFloat(line.rows[0]!.total_price)).toBe(100) // 10 qty * 10 unit_price, unchanged
+    expect(parseFloat(line.rows[0]!.total_price)).toBe(70) // (10 - 3) to buy * 10 unit_price
     // Store price still gets auto-filled for the from-stock portion —
     // qty_from_stock > 0 is the only gate, not full coverage.
     expect(parseFloat(line.rows[0]!.store_price)).toBe(7)
