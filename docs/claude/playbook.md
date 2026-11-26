@@ -4483,11 +4483,33 @@ Don't re-derive, check these first.
     10.2 million IQD of cost appeared nowhere on it; there was no breakdown (jobsite delivery, Store Out, returns, combined journal);
     and the Purchase Order box beside it, which is what was ORDERED (8.9 million IQD, 10,169.69 USD), sat next to a cost figure it
     cannot match (inventory-bound goods, Store Outs from the central warehouse and expense claims never pass through those POs).
-    Fix (front end only): the Overview draws the same `ProjectCostSummaryCards` as the analytic account page, above its first row of
-    cards (one component, one query, so they cannot disagree; it shows nothing when there is no cost or the person may not see the
-    project); the Financial Summary lost its Actual Cost row (the budget, committed, remaining and forecast rows stay) and says
-    "{currency} only" in its header; the PO box is titled "Purchase Orders: Value Ordered" and its note says it is what was ordered,
-    will not match the project cost above, and why. How to spot the class: two screens of one project with different totals (#95), a
-    summary that reads a single `currencyCode` while the data holds two, a box whose title says "summary" without saying of what.
-    Pins (the page has no render harness, #92): `projectDetailPoWiring.test.ts` (the cards come before row 1, no Actual Cost row, the
-    currency label); three mutations, all killed. Not verified in a browser or in Arabic. Related to #83, #92, #95.
+    First fix (shipped 2026-11-26, e6ac0f4, then taken off the same day): the Overview drew the analytic account's
+    `ProjectCostSummaryCards` above its first row of cards, dropped the Financial Summary's Actual Cost row and labelled it "USD
+    only". The user's verdict on seeing it live: "i dont like this" (two wide plain boxes in a different style from the cards below,
+    pushing Project Information down). Asked what to change, the answer was "undo it". What stays: the PO box is titled "Purchase
+    Orders: Value Ordered" and its note says it is what was ordered and will not match the project's Actual Cost, and why. The
+    Overview's Financial Summary is as it was (Actual Cost row back, single currency, no label), so the missing IQD still has no
+    place on the Overview: it is on the analytic account page and the header. If this is picked up again, the open design questions
+    are style (the same card style as its neighbours) and place (inside Financial Summary, or one compact card), not whether to show
+    both currencies. Lesson: a UI change that adds a new block above existing ones changes the whole page's look, so show a mockup
+    of the placement first (the Artifact route used for the review) instead of building from a description.
+    How to spot the class: two screens of one project with different totals (#95), a summary that reads a single `currencyCode`
+    while the data holds two, a box whose title says "summary" without saying of what.
+    Second attempt, same day, after a mockup the user approved ("build it as drawn"): the two cards keep their size and place and
+    become components. `ProjectFinancialSummaryCard` (figures from `lib/projectFinancialSummary.ts`) has one column per currency of
+    `costSummary` (IQD and USD for NY-PRJ-2026-0032), labels that say what each figure is, and a figure that cannot be worked out
+    shows what is missing ("No budget set for this project", "Needs a budget", "Needs % complete", "Needs a budget and % complete")
+    instead of 0.00. Two corrections to the mockup, because the arithmetic said so: the FORECAST needs only a % complete (the old
+    code forecast from actual cost divided by % complete and never used the budget), so it says "Needs % complete"; and a currency
+    with no budget beside one that has one shows a dash in its own cell. `ProjectPoSummaryCard` has one column per currency, "POs"
+    instead of "Qty", a "Total ordered" row, and a "Booked as project cost" row from the same per-currency cost as the Financial
+    Summary (`financialModel.columns[].actual`), with one note on why the two differ; a currency that has cost but no orders is
+    still a column. The booked figure is deliberately NOT reconciled against the ordered one (the gap cannot be computed from what
+    the page holds). Pins and tests: `lib/__tests__/projectFinancialSummary.test.ts` (9),
+    `components/projects/__tests__/ProjectOverviewMoneyCards.test.tsx` (20, real NY-PRJ-2026-0032 figures, English and Arabic),
+    `projectDetailPoWiring.test.ts` (the page builds both from every currency and keeps no table of its own); 17 mutations killed.
+    Traps met: a mutation runner that spawns vitest from node reports every mutant of a web render test as killed because the suite
+    fails there even unmutated ("Cannot read properties of null (reading 'useState')", identical counts of 21 to 23 for every
+    mutant were the tell); drive vitest from the shell and let node only patch and restore (`mutate-step.cjs apply|restore <i>`), and
+    run an identity mutant first; `line_totals` on a project PO is an array of `{currency_code, amount}`, not an object. Not verified
+    in a browser or in Arabic. Related to #83, #92, #95.
