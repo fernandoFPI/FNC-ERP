@@ -4475,3 +4475,19 @@ Don't re-derive, check these first.
     the review take-from-stock assertion, `RequisitionDetail.test.tsx`. Mutation-checked: 8 mutations (each writer back to the old
     rule, the floor, the stock term), all killed; one survived first (the review's Take from stock) and got its assertion.
     Related to #6 (a total with several writers), #23, #44 and #56.
+
+128. **A summary screen that shows one currency's cost, no breakdown, and a neighbouring box that looks like cost but is not.**
+    The user, on NY-PRJ-2026-0032: "the cost breakdown in the project overview is confusing; the analytic account shows the
+    correct numbers and breakdown, the overview does not." Both were right; they counted different things and the Overview did not
+    say so. The Overview's Financial Summary read `cost_summary.actualCosts` in the project's ONE header currency (USD), so the
+    10.2 million IQD of cost appeared nowhere on it; there was no breakdown (jobsite delivery, Store Out, returns, combined journal);
+    and the Purchase Order box beside it, which is what was ORDERED (8.9 million IQD, 10,169.69 USD), sat next to a cost figure it
+    cannot match (inventory-bound goods, Store Outs from the central warehouse and expense claims never pass through those POs).
+    Fix (front end only): the Overview draws the same `ProjectCostSummaryCards` as the analytic account page, above its first row of
+    cards (one component, one query, so they cannot disagree; it shows nothing when there is no cost or the person may not see the
+    project); the Financial Summary lost its Actual Cost row (the budget, committed, remaining and forecast rows stay) and says
+    "{currency} only" in its header; the PO box is titled "Purchase Orders: Value Ordered" and its note says it is what was ordered,
+    will not match the project cost above, and why. How to spot the class: two screens of one project with different totals (#95), a
+    summary that reads a single `currencyCode` while the data holds two, a box whose title says "summary" without saying of what.
+    Pins (the page has no render harness, #92): `projectDetailPoWiring.test.ts` (the cards come before row 1, no Actual Cost row, the
+    currency label); three mutations, all killed. Not verified in a browser or in Arabic. Related to #83, #92, #95.
