@@ -1234,6 +1234,8 @@ describe('taking part of a line from stock in the review', () => {
     expect(Number(l.qty_from_stock)).toBe(4)
     expect(Number(l.review_stock_qty)).toBe(4)
     expect(l.source_location_id).toBe(locationId)
+    // the line's total is the amount still to buy: (ordered - from stock) x price, not the whole line (playbook #127)
+    expect(Number(l.total_price)).toBeCloseTo((Number(l.qty_ordered) - 4) * 12.5, 4)
     expect(await storeOutLines(b.reqId)).toHaveLength(0)
     expect(await logActions(b.reqId)).toContain('review_taken_from_stock')
     const r = await reviewOf(b.reqId)
@@ -1662,7 +1664,7 @@ describe('taking part of a line from stock in the review', () => {
       expect(Number(l.qty_from_stock)).toBe(4)
       expect(Number(l.review_stock_qty)).toBe(4)
       expect(l.in_stock).toBe(false)
-      expect(Number(l.total_price)).toBeCloseTo(125, 2) // not zeroed: 6 are still bought
+      expect(Number(l.total_price)).toBeCloseTo(75, 2) // not zeroed: the 6 still bought, 6 x 12.5 (the 4 from stock are not in it)
       expect(l.source_location_id).toBe(locationId)
       expect(await reservedAt()).toBe(4)
       expect((await lineState(b.lines[0]!)).review_replaced).toBeNull() // nothing was removed

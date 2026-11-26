@@ -242,3 +242,37 @@ describe('only the price records a line already has are moved', () => {
     expect(num(p.total_price)).toBe(10 * 58000)
   })
 })
+
+// A line partly covered from stock: its total is the amount still TO PURCHASE, (ordered - from stock) x price (playbook #127), and an
+// approved edit of the price or the quantity must rebuild it by the same rule, not as the whole line.
+describe('an approved edit on a line partly covered from stock rebuilds the total from what is still to buy', () => {
+  const partlyFromStock = async () => {
+    const made = await makeRequisition('approved', 12, 11, { market: 11, verified: 11, approved: 11 })
+    // 8 of the 12 come from the shelf, so 4 are bought and the total is 4 x 11
+    await pool.query(`UPDATE po_lines SET qty_from_stock=8, total_price=44 WHERE id=$1`, [made.lineId])
+    return made
+  }
+
+  it('a new price multiplies only the 4 to buy', async () => {
+    const { reqId, lineId } = await partlyFromStock()
+    await editLine(reqId, lineId, 'unit_price', 11, 10, true)
+    const p = await priceFields(lineId)
+    expect(num(p.unit_price)).toBe(10)
+    expect(num(p.total_price)).toBe(4 * 10) // not 12 x 10
+  })
+
+  it('a new quantity changes only what is still to buy', async () => {
+    const { reqId, lineId } = await partlyFromStock()
+    await editLine(reqId, lineId, 'qty_ordered', 12, 15, true)
+    const p = await priceFields(lineId)
+    expect(num(p.qty_ordered)).toBe(15)
+    expect(num(p.total_price)).toBe(7 * 11) // 15 - 8 = 7 to buy, not 15 x 11
+  })
+
+  it('lowering the quantity to what stock already covers leaves nothing to buy: 0', async () => {
+    const { reqId, lineId } = await partlyFromStock()
+    await editLine(reqId, lineId, 'qty_ordered', 12, 8, true)
+    const p = await priceFields(lineId)
+    expect(num(p.total_price)).toBe(0)
+  })
+})

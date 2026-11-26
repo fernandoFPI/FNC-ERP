@@ -56,6 +56,7 @@ import {
   directSupplySubmitProblem,
   isDirectSupply,
 } from '../lib/directSupply.js'
+import { toPurchaseTotalSql } from '../lib/lineToPurchase.js'
 import {
   discountedPriceProblem,
   effectivePriceSql,
@@ -1170,7 +1171,7 @@ async function applyRequisitionEditChanges(
   if (priceAffectedLineIds.size > 0) {
     await client.query(
       `UPDATE po_lines
-       SET total_price = CASE WHEN qty_from_stock >= qty_ordered THEN 0 ELSE qty_ordered * unit_price END
+       SET total_price = ${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)' })}
        WHERE id = ANY($1) AND requisition_id = $2`,
       [Array.from(priceAffectedLineIds), reqId],
     )
@@ -3040,7 +3041,7 @@ async function settleReviewLineQuantitiesGW(client: PoolClient, reqId: string): 
     if (!orderedMoved && settled.short === shortWas) continue
     await client.query(
       `UPDATE po_lines
-          SET qty_ordered=$2, total_price=$2*unit_price,
+          SET qty_ordered=$2, total_price=${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)', ordered: '$2::numeric' })},
               short_marked_at = CASE WHEN $3::boolean THEN COALESCE(short_marked_at, NOW()) ELSE NULL END,
               short_marked_by = CASE WHEN $3::boolean THEN short_marked_by ELSE NULL END,
               short_reason    = CASE WHEN $3::boolean THEN COALESCE(short_reason, 'Accepted in the organizer review') ELSE NULL END
@@ -3345,7 +3346,9 @@ async function forkChildPurchaseOrders(
           // accepted short shortfall) stays on the original row.
           const remainderQty = qtyOrdered - totalEntryQty
           await client.query(
-            `UPDATE po_lines SET qty_ordered=$1, total_price=$1*unit_price WHERE id=$2`,
+            // What stays on this row is covered from stock or accepted short: nothing on it is bought, so its total is 0
+            // (the purchased units moved to the child purchase orders with their own totals).
+            `UPDATE po_lines SET qty_ordered=$1, total_price=0 WHERE id=$2`,
             [remainderQty, line.id],
           )
         }
@@ -36427,7 +36430,7 @@ const phase5MutationResolvers = {
       for (const lsq of args.lineStockQtys) {
         await client.query(
           `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4,
-             total_price = CASE WHEN $1>=qty_ordered THEN 0 ELSE total_price END
+             total_price = ${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)', fromStock: '$1::numeric' })}
            WHERE id=$2 AND requisition_id=$3`,
           [lsq.qtyFromStock, lsq.lineId, args.id, lsq.sourceLocationId ?? null],
         )
@@ -36806,7 +36809,7 @@ const phase5MutationResolvers = {
         const updated = await client.query<{ product_id: string | null }>(
           `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3,
              currency_code=$2,
-             total_price = qty_ordered * $1
+             total_price = ${toPurchaseTotalSql({ price: '$1' })}
            WHERE id=$4 AND requisition_id=$5
            RETURNING product_id`,
           [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
@@ -37028,7 +37031,7 @@ const phase5MutationResolvers = {
         // price x the full qty_ordered — store_price stays a record only.
         await client.query(
           `UPDATE po_lines SET verified_price=$1, verified_price_currency=currency_code, unit_price=$1,
-             total_price = qty_ordered * $1
+             total_price = ${toPurchaseTotalSql({ price: '$1' })}
            WHERE id=$2 AND requisition_id=$3`,
           [la.verifiedPrice, la.lineId, args.id],
         )
@@ -38117,7 +38120,7 @@ const phase5MutationResolvers = {
       const newQtyFromStock = qtyFromStockSoFar + qty
       const r = await client.query(
         `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$2,
-           total_price = CASE WHEN $1>=qty_ordered THEN 0 ELSE total_price END
+           total_price = ${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)', fromStock: '$1::numeric' })}
          WHERE id=$3 RETURNING *`,
         [newQtyFromStock, args.sourceLocationId, args.lineId],
       )
@@ -38823,7 +38826,7 @@ const phase5MutationResolvers = {
       await client.query(
         `UPDATE po_lines
             SET qty_from_stock=$2::numeric, in_stock=($2::numeric>=qty_ordered), source_location_id=$3,
-                total_price = CASE WHEN $2::numeric>=qty_ordered THEN 0 ELSE total_price END,
+                total_price = ${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)', fromStock: '$2::numeric' })},
                 review_stock_qty = COALESCE(review_stock_qty,0) + $4, review_stock_by=$5, review_stock_at=NOW()
           WHERE id=$1`,
         [args.lineId, newFromStock, args.sourceLocationId, qty, auth.userId],
@@ -38933,7 +38936,7 @@ const phase5MutationResolvers = {
         `UPDATE po_lines
             SET qty_from_stock=$2::numeric, in_stock=false,
                 source_location_id = CASE WHEN $2::numeric > 0 THEN source_location_id ELSE NULL END,
-                total_price = qty_ordered * unit_price,
+                total_price = ${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)', fromStock: '$2::numeric' })},
                 review_stock_qty=NULL, review_stock_by=NULL, review_stock_at=NULL
           WHERE id=$1`,
         [args.lineId, left],
@@ -39194,7 +39197,7 @@ const phase5MutationResolvers = {
       await client.query(
         `UPDATE po_lines
             SET qty_from_stock=$2::numeric, in_stock=($2::numeric >= qty_ordered), source_location_id=$3,
-                total_price = CASE WHEN $2::numeric >= qty_ordered THEN 0 ELSE total_price END,
+                total_price = ${toPurchaseTotalSql({ price: 'COALESCE(unit_price, 0)', fromStock: '$2::numeric' })},
                 short_marked_at = CASE WHEN $2::numeric >= qty_ordered THEN NULL ELSE short_marked_at END,
                 short_marked_by = CASE WHEN $2::numeric >= qty_ordered THEN NULL ELSE short_marked_by END,
                 short_reason = CASE WHEN $2::numeric >= qty_ordered THEN NULL ELSE short_reason END,
