@@ -240,6 +240,7 @@ import { TabBar } from '../../../components/ui/TabBar'
 import { RevisionHistory } from '../../../components/ui/RevisionHistory'
 import { ProjectStatusBar } from '../../../components/projects/ProjectStatusBar'
 import { StageEditDrawer } from '../../../components/projects/StageEditDrawer'
+import { ProjectCostSummaryCards } from '../../../components/finance/ProjectCostSummaryCards'
 import { ManufacturingRequestForm } from '../components/ManufacturingRequestForm'
 import { formatCurrency } from '../../../lib/format'
 import { api } from '../../../lib/axios'
@@ -2949,12 +2950,6 @@ export default function ProjectDetail() {
                     bold: false,
                   },
                   {
-                    label: t('proj.detail.actualCost'),
-                    val: ovActual,
-                    color: theme.textPrimary,
-                    bold: false,
-                  },
-                  {
                     label: t('proj.detail.committedCostInclStore'),
                     val: ovCommitted,
                     color: theme.textPrimary,
@@ -3168,6 +3163,9 @@ export default function ProjectDetail() {
                       </div>
                     )}
 
+                    {/* what the project has cost so far, per currency and kind: the same cards as the analytic account page */}
+                    <ProjectCostSummaryCards projectId={p.id} />
+
                     {/* ── Row 1: 4 cards ── */}
                     <div
                       style={{
@@ -3262,7 +3260,15 @@ export default function ProjectDetail() {
                       {/* 2. Financial Summary */}
                       {card(
                         <>
-                          {ch(t('proj.detail.financialSummary'))}
+                          {ch(
+                            t('proj.detail.financialSummary'),
+                            <span
+                              style={{ fontSize: '11px', color: theme.textSecondary }}
+                              data-testid="financial-summary-ccy"
+                            >
+                              {t('proj.detail.financialSummaryCcyOnly', { currency: ovCcy })}
+                            </span>,
+                          )}
                           <Table
                             columns={financialSummaryColumns}
                             data={financialSummaryRows}
