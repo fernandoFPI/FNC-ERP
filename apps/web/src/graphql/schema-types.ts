@@ -4943,6 +4943,7 @@ export type MutationRetryOutboxEventArgs = {
 
 export type MutationReturnPoToOrganizerArgs = {
   id: Scalars['ID']['input'];
+  lineFlags?: InputMaybe<Array<LineFlagInput>>;
   reason: Scalars['String']['input'];
 };
 
@@ -6491,6 +6492,9 @@ export type PoLinePurchase = {
   bought_by_name?: Maybe<Scalars['String']['output']>;
   currency_code: Scalars['String']['output'];
   discounted_unit_price?: Maybe<Scalars['String']['output']>;
+  finance_flag_reason?: Maybe<Scalars['String']['output']>;
+  finance_flagged_at?: Maybe<Scalars['String']['output']>;
+  finance_flagged_by?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   over_tolerance: Scalars['Boolean']['output'];
   po_line_id: Scalars['ID']['output'];
