@@ -474,6 +474,7 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
         permissions: [
           { key: 'hr.employees.view', get label() { return i18n.t('perm.reg.viewEmployees', { defaultValue: "View Employees" }) }, sortOrder: 500 },
           { key: 'hr.employees.edit', get label() { return i18n.t('perm.reg.manageEmployees', { defaultValue: "Manage Employees" }) }, sortOrder: 501 },
+          { key: 'hr.employees.performance', get label() { return i18n.t('perm.reg.viewEmployeePerformance', { defaultValue: "View Employee Performance" }) }, sortOrder: 502 },
         ],
       },
       {

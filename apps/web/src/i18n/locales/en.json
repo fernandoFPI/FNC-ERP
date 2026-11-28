@@ -3538,7 +3538,8 @@
       "viewVariationOrders": "View Variation Orders",
       "viewVendors": "View Vendors",
       "viewWorkCenters": "View Work Centers",
-      "workCenters": "Work Centers"
+      "workCenters": "Work Centers",
+      "viewEmployeePerformance": "View Employee Performance"
     }
   },
   "admin": {
@@ -8727,7 +8728,8 @@
       "unlink": "Unlink",
       "updateSalary": "Update salary",
       "userLinkedToEmployee": "User linked to employee",
-      "userUnlinkedFromEmployee": "User unlinked from employee"
+      "userUnlinkedFromEmployee": "User unlinked from employee",
+      "performance": "Performance"
     },
     "empDocs": {
       "attachment": "Attachment",
@@ -9099,6 +9101,97 @@
       "start": "Start",
       "startTime": "Start time",
       "status": "Status"
+    },
+    "performance": {
+      "title": "Performance",
+      "period": "Period",
+      "p30": "30 days",
+      "p90": "90 days",
+      "p365": "1 year",
+      "pAll": "All time",
+      "range30": "Last 30 days",
+      "range90": "Last 90 days",
+      "range365": "Last 12 months",
+      "rangeAll": "All time",
+      "rangeNote": "requisition figures count only requisitions this person organized",
+      "loading": "Loading performance figures…",
+      "notFound": "Performance figures are not available for this employee.",
+      "loadError": "The performance figures could not be loaded.",
+      "tryAgain": "Try again",
+      "notLinked": "This employee is not linked to a login, so requisition, purchase order and approval figures are not available. Claims and advances are still shown.",
+      "tileOrganized": "Requisitions organized",
+      "organizedSub": "{{completed}} completed · {{inProgress}} in progress · {{cancelled}} cancelled",
+      "tileSentBack": "Sent back at least once",
+      "ofRequisitions": "{{part}} of {{total}} requisitions",
+      "tileAudit": "Finance audit passed first time",
+      "ofPOs": "{{part}} of {{total}} purchase orders",
+      "tileClaims": "Expense claims rejected",
+      "ofClaims": "{{part}} of {{total}} claims",
+      "tileMedian": "Median time to answer",
+      "medianSub": "as an approver, {{kind}}",
+      "hours": "{{value}} h",
+      "days": "{{value}} d",
+      "stagesTitle": "Their requisitions: where they were sent back",
+      "stagesSub": "Each time an approver or Finance sent a requisition they organized back. Click a row to see which ones.",
+      "drillTitle": "Sent back here, newest first",
+      "noNote": "no reason written",
+      "stage": {
+        "draft": "Back to draft",
+        "inventory_check": "Inventory check",
+        "store_pricing": "Store pricing",
+        "market_pricing": "Market pricing",
+        "organizer_review": "Organizer review (rejected at re-approval)",
+        "finance_return": "Returned by Finance"
+      },
+      "workTitle": "Their work that others sent back",
+      "workSub": "A rejection is counted against whoever did the step that was sent back, not against the organizer by default.",
+      "work": {
+        "pricing_rejected": "Market pricing sent back at price verification",
+        "verification_rejected": "Price verification sent back at approval",
+        "review_rejected": "Review sent back at re-approval",
+        "over_tolerance": "Purchases over the approved price",
+        "lines_flagged": "Lines flagged by an approver",
+        "audit_returned": "Purchase orders Finance returned"
+      },
+      "trendTitle": "Sent-back rate by month",
+      "trendSub": "Share of the requisitions created that month that were sent back at least once. The count is under each bar.",
+      "trendAria": "{{month}}: {{part}} of {{total}} requisitions sent back ({{rate}})",
+      "auditTitle": "Finance audit on their purchase orders",
+      "auditSub": "What Finance decided when the purchase order reached Finance review.",
+      "auditPassedFirst": "Passed first time",
+      "auditReturned": "Returned for correction",
+      "auditPassedAfter": "Passed after a return",
+      "colResult": "Result",
+      "colPOs": "POs",
+      "colShare": "Share",
+      "claimsTitle": "Expense claims and advances",
+      "claimsSub": "What they filed for themselves.",
+      "colType": "Type",
+      "colFiled": "Filed",
+      "colRejected": "Rejected",
+      "colRate": "Rate",
+      "claim": {
+        "expense_claim": "Expense claims",
+        "advance_request": "Advance requests"
+      },
+      "approverTitle": "As an approver",
+      "approverSub": "What came to them for a decision, and how long it waited before they answered.",
+      "colKind": "Kind",
+      "colApproved": "Approved",
+      "colSentBack": "Sent back",
+      "colMedian": "Median time to answer",
+      "approverKind": {
+        "requisition": "Requisitions",
+        "expense_claim": "Expense claims",
+        "advance_request": "Advance requests"
+      },
+      "howTitle": "How to read this tab",
+      "how1": "A rate always sits next to its count: 1 of 3 is not the same as 30 of 90.",
+      "how2": "There is no score and no ranking between people. Roles and teams differ too much.",
+      "how3": "Only people with the Employee Performance permission, administrators and the employee's direct manager see this tab. The employee does not see their own.",
+      "how4": "Everything is read from the approval logs each time the tab opens. Nothing extra is stored.",
+      "how5": "A cancelled requisition is counted as cancelled, never as a failure.",
+      "how6": "Work is credited to whoever did the step that was sent back, which is not always the organizer."
     }
   },
   "payroll": {

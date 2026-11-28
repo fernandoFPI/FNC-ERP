@@ -72,6 +72,10 @@
     # HR
     employees(department_id: ID, is_active: Boolean): [Employee]
     employee(id: ID!): Employee
+    # The Performance tab of an employee (lib/employeePerformance.ts). days: 30, 90 or 365; left out means all time.
+    employeePerformance(employeeId: ID!, days: Int): EmployeePerformance
+    # Whether the caller may open that employee's Performance tab: the same rule the query enforces, so the page keeps no copy.
+    canViewEmployeePerformance(employeeId: ID!): Boolean!
     findEmployeeAcrossCompanies(email: String!): EmployeeCrossCompanyMatch
     departments: [Department]
     workLocations(is_active: Boolean): [WorkLocation]
@@ -1760,6 +1764,61 @@
     suppliers: String
     destinationLocationId: ID
     destinationName: String
+  }
+
+  type EmployeePerformance {
+    employeeId: ID!
+    linked: Boolean!
+    days: Int
+    since: String
+    requisitions: PerformanceRequisitions!
+    sentBackStages: [PerformanceStage!]!
+    workSentBack: [PerformanceCount!]!
+    trend: [PerformanceMonth!]!
+    audit: PerformanceAudit!
+    claims: [PerformanceClaims!]!
+    approver: [PerformanceApprover!]!
+  }
+  type PerformanceRequisitions {
+    organized: Int!
+    completed: Int!
+    inProgress: Int!
+    cancelled: Int!
+    sentBack: Int!
+  }
+  type PerformanceStage {
+    key: String!
+    count: Int!
+    examples: [PerformanceExample!]!
+  }
+  type PerformanceExample {
+    number: String!
+    note: String
+  }
+  type PerformanceCount {
+    key: String!
+    count: Int!
+  }
+  type PerformanceMonth {
+    month: String!
+    total: Int!
+    sentBack: Int!
+  }
+  type PerformanceAudit {
+    passedFirst: Int!
+    returned: Int!
+    passedAfterReturn: Int!
+  }
+  type PerformanceClaims {
+    key: String!
+    filed: Int!
+    rejected: Int!
+  }
+  type PerformanceApprover {
+    key: String!
+    approved: Int!
+    sentBack: Int!
+    medianHours: Float
   }
 
   type StoreDocument {

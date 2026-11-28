@@ -574,3 +574,62 @@ export const FILE_DOWNLOAD_URL_QUERY = gql`
     }
   }
 `
+
+// The Performance tab of an employee (gateway lib/employeePerformance.ts). days: 30, 90 or 365; left out = all time.
+export const EMPLOYEE_PERFORMANCE_QUERY = gql`
+  query EmployeePerformance($employeeId: ID!, $days: Int) {
+    employeePerformance(employeeId: $employeeId, days: $days) {
+      employeeId
+      linked
+      days
+      since
+      requisitions {
+        organized
+        completed
+        inProgress
+        cancelled
+        sentBack
+      }
+      sentBackStages {
+        key
+        count
+        examples {
+          number
+          note
+        }
+      }
+      workSentBack {
+        key
+        count
+      }
+      trend {
+        month
+        total
+        sentBack
+      }
+      audit {
+        passedFirst
+        returned
+        passedAfterReturn
+      }
+      claims {
+        key
+        filed
+        rejected
+      }
+      approver {
+        key
+        approved
+        sentBack
+        medianHours
+      }
+    }
+  }
+`
+
+// Whether to show the tab at all: the same rule the query enforces, decided on the server.
+export const CAN_VIEW_EMPLOYEE_PERFORMANCE_QUERY = gql`
+  query CanViewEmployeePerformance($employeeId: ID!) {
+    canViewEmployeePerformance(employeeId: $employeeId)
+  }
+`

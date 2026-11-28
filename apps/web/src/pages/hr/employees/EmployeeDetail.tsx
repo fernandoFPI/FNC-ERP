@@ -12,6 +12,7 @@ import {
   EMPLOYEE_CURRENT_SHIFT_QUERY,
   ASSIGN_SHIFT,
   UNASSIGN_SHIFT,
+  CAN_VIEW_EMPLOYEE_PERFORMANCE_QUERY,
 } from '../../../graphql/hr'
 import { COMPANY_USERS_QUERY } from '../../../graphql/admin'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -33,6 +34,8 @@ import { useAuthStore } from '../../../store/authStore'
 import { BankDetailsForm } from './BankDetailsForm'
 import { EmployeeLeaveTab } from './EmployeeLeaveTab'
 import { EmployeeDocumentsTab } from './EmployeeDocumentsTab'
+import { EmployeePerformanceTab } from './EmployeePerformanceTab'
+import type { CanViewEmployeePerformanceQuery, CanViewEmployeePerformanceQueryVariables } from '../../../graphql/generated'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { AssignShiftMutation, AssignShiftMutationVariables, CompanyUsersQuery, CompanyUsersQueryVariables, EmployeeCurrentShiftQuery, EmployeeCurrentShiftQueryVariables, EmployeeQuery, EmployeeQueryVariables, EmployeeSalaryConfigQuery, EmployeeSalaryConfigQueryVariables, LinkEmployeeUserMutation, LinkEmployeeUserMutationVariables, ShiftConfigsQuery, ShiftConfigsQueryVariables, TerminateEmployeeMutation, TerminateEmployeeMutationVariables, UnassignShiftMutation, UnassignShiftMutationVariables } from '../../../graphql/generated'
 
@@ -44,6 +47,8 @@ const TABS = [
   { key: 'documents', get label() { return i18n.t('hr.empDetail.documents', { defaultValue: "Documents" }) } },
   { key: 'activity', get label() { return i18n.t('hr.empDetail.activity', { defaultValue: "Activity" }) } },
 ]
+// Shown only when the server says the caller may open it (gateway canViewEmployeePerformance): the page keeps no copy of that rule.
+const PERFORMANCE_TAB = { key: 'performance', get label() { return i18n.t('hr.empDetail.performance', { defaultValue: "Performance" }) } }
 
 export default function EmployeeDetail() {
   const { t } = useTranslation()
@@ -76,6 +81,12 @@ export default function EmployeeDetail() {
     skip: !id,
     fetchPolicy: 'cache-and-network',
   })
+  const { data: canPerfData } = useQuery<CanViewEmployeePerformanceQuery, CanViewEmployeePerformanceQueryVariables>(CAN_VIEW_EMPLOYEE_PERFORMANCE_QUERY, {
+    variables: { employeeId: id ?? '' },
+    skip: !id,
+    fetchPolicy: 'cache-and-network',
+  })
+  const canViewPerformance = canPerfData?.canViewEmployeePerformance === true
   const { data: usersData } = useQuery<CompanyUsersQuery, CompanyUsersQueryVariables>(COMPANY_USERS_QUERY, {
     variables: { companyId: currentCompanyId },
     skip: !linkUserOpen,
@@ -311,7 +322,7 @@ export default function EmployeeDetail() {
         ))}
       </div>
 
-      <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
+      <TabBar tabs={canViewPerformance ? [...TABS, PERFORMANCE_TAB] : TABS} active={activeTab} onChange={setActiveTab} />
 
       <div style={{ marginTop: '16px' }}>
         {activeTab === 'overview' && (
@@ -531,6 +542,8 @@ export default function EmployeeDetail() {
         {activeTab === 'leave' && id && <EmployeeLeaveTab employeeId={id} />}
 
         {activeTab === 'documents' && id && <EmployeeDocumentsTab employeeId={id} />}
+
+        {activeTab === 'performance' && id && canViewPerformance && <EmployeePerformanceTab employeeId={id} />}
       </div>
 
       {/* Assign Shift Modal */}
