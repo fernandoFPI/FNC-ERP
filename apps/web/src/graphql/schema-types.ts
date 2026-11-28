@@ -1220,6 +1220,20 @@ export type EmployeeMonthSummary = {
   total_hours?: Maybe<Scalars['Float']['output']>;
 };
 
+export type EmployeePerformance = {
+  approver: Array<PerformanceApprover>;
+  audit: PerformanceAudit;
+  claims: Array<PerformanceClaims>;
+  days?: Maybe<Scalars['Int']['output']>;
+  employeeId: Scalars['ID']['output'];
+  linked: Scalars['Boolean']['output'];
+  requisitions: PerformanceRequisitions;
+  sentBackStages: Array<PerformanceStage>;
+  since?: Maybe<Scalars['String']['output']>;
+  trend: Array<PerformanceMonth>;
+  workSentBack: Array<PerformanceCount>;
+};
+
 export type EmployeeShift = {
   break_minutes?: Maybe<Scalars['Int']['output']>;
   effective_from: Scalars['String']['output'];
@@ -6784,6 +6798,55 @@ export type PendingProductCatalogItem = {
   uom?: Maybe<Scalars['String']['output']>;
 };
 
+export type PerformanceApprover = {
+  approved: Scalars['Int']['output'];
+  key: Scalars['String']['output'];
+  medianHours?: Maybe<Scalars['Float']['output']>;
+  sentBack: Scalars['Int']['output'];
+};
+
+export type PerformanceAudit = {
+  passedAfterReturn: Scalars['Int']['output'];
+  passedFirst: Scalars['Int']['output'];
+  returned: Scalars['Int']['output'];
+};
+
+export type PerformanceClaims = {
+  filed: Scalars['Int']['output'];
+  key: Scalars['String']['output'];
+  rejected: Scalars['Int']['output'];
+};
+
+export type PerformanceCount = {
+  count: Scalars['Int']['output'];
+  key: Scalars['String']['output'];
+};
+
+export type PerformanceExample = {
+  note?: Maybe<Scalars['String']['output']>;
+  number: Scalars['String']['output'];
+};
+
+export type PerformanceMonth = {
+  month: Scalars['String']['output'];
+  sentBack: Scalars['Int']['output'];
+  total: Scalars['Int']['output'];
+};
+
+export type PerformanceRequisitions = {
+  cancelled: Scalars['Int']['output'];
+  completed: Scalars['Int']['output'];
+  inProgress: Scalars['Int']['output'];
+  organized: Scalars['Int']['output'];
+  sentBack: Scalars['Int']['output'];
+};
+
+export type PerformanceStage = {
+  count: Scalars['Int']['output'];
+  examples: Array<PerformanceExample>;
+  key: Scalars['String']['output'];
+};
+
 export type PeriodInput = {
   end_date: Scalars['String']['input'];
   name: Scalars['String']['input'];
@@ -7780,6 +7843,7 @@ export type Query = {
   bidSupplierQuotations: Array<BidSupplierQuotation>;
   bom?: Maybe<Bom>;
   boms: Array<Bom>;
+  canViewEmployeePerformance: Scalars['Boolean']['output'];
   centralWarehouseLocations: Array<StockLocation>;
   clientDocuments: Array<ClientDocument>;
   companies: Array<CompanyDetail>;
@@ -7798,6 +7862,7 @@ export type Query = {
   docDistributionMatrix: Array<DocDistributionEntry>;
   employee?: Maybe<Employee>;
   employeeCurrentShift?: Maybe<EmployeeShift>;
+  employeePerformance?: Maybe<EmployeePerformance>;
   employeeSalaryConfig?: Maybe<SalaryConfig>;
   employees?: Maybe<Array<Maybe<Employee>>>;
   engClientComments: Array<EngClientComment>;
@@ -8115,6 +8180,11 @@ export type QueryBomsArgs = {
 };
 
 
+export type QueryCanViewEmployeePerformanceArgs = {
+  employeeId: Scalars['ID']['input'];
+};
+
+
 export type QueryCentralWarehouseLocationsArgs = {
   isActive?: InputMaybe<Scalars['Boolean']['input']>;
   type?: InputMaybe<Scalars['String']['input']>;
@@ -8191,6 +8261,12 @@ export type QueryEmployeeArgs = {
 
 export type QueryEmployeeCurrentShiftArgs = {
   employee_id: Scalars['ID']['input'];
+};
+
+
+export type QueryEmployeePerformanceArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
+  employeeId: Scalars['ID']['input'];
 };
 
 

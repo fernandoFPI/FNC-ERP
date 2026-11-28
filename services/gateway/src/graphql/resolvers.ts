@@ -152,6 +152,7 @@ import {
   mapStoreDocumentRow,
   searchPattern,
 } from '../lib/storeDocuments.js'
+import { loadEmployeePerformance, normalizePerformanceDays } from '../lib/employeePerformance.js'
 import {
   TEMP_STORE_ITEMS_SQL,
   assertTransferEndpoint,
@@ -5438,6 +5439,30 @@ async function poHasNewVocabBuyRecordsGW(poId: string): Promise<boolean> {
 // Generic granular-permission check for GraphQL mutations, matching
 // requirePermission's semantics exactly (system_admin/company_admin bypass,
 // everyone else needs the key granted at minLevel). Throws on failure.
+// The one place that decides who may open an employee's Performance tab: an administrator, a holder of hr.employees.performance, or the
+// employee's direct manager (employees.manager_id is the caller's own employee record). The employee does NOT get their own tab unless
+// they hold the permission. The employee must belong to the caller's company, so another company's id answers "no", never a leak.
+async function employeeForPerformanceGW(
+  auth: { companyId: string },
+  employeeId: string,
+): Promise<{ id: string; user_id: string | null; manager_id: string | null } | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId)) return null
+  const r = await query(`SELECT id, user_id, manager_id FROM employees WHERE id=$1 AND company_id=$2`, [employeeId, auth.companyId])
+  return (r.rows[0] as { id: string; user_id: string | null; manager_id: string | null } | undefined) ?? null
+}
+async function canViewEmployeePerformanceGW(
+  auth: { userId: string; companyId: string; role: string },
+  employeeId: string,
+): Promise<boolean> {
+  const emp = await employeeForPerformanceGW(auth, employeeId)
+  if (!emp) return false
+  if (isPermissionBypassGW(auth.role)) return true
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  if (meetsLevel(perms['hr.employees.performance'], 'view')) return true
+  if (!emp.manager_id) return false
+  return (await getEmployeeIdGW(auth.userId, auth.companyId)) === emp.manager_id
+}
+
 async function requirePermGW(
   auth: { userId: string; companyId: string; role: string },
   permKey: string,
@@ -11743,6 +11768,22 @@ export const resolvers = {
       await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
       const r = await query(TEMP_STORE_ITEMS_SQL, [ctx.auth.companyId])
       return r.rows.map((row) => mapTempStoreRow(row as Record<string, unknown>))
+    },
+
+    // The Performance tab of an employee (lib/employeePerformance.ts). Read from the logs on every open; nothing is stored.
+    employeePerformance: async (_: unknown, args: { employeeId: string; days?: number | null }, ctx: GQLContext) => {
+      if (!ctx.auth) return null
+      const days = normalizePerformanceDays(args.days)
+      const emp = await employeeForPerformanceGW(ctx.auth, args.employeeId)
+      if (!emp) return null
+      if (!(await canViewEmployeePerformanceGW(ctx.auth, args.employeeId))) {
+        throw new Error("Requires access to 'hr.employees.performance', or being this employee's manager")
+      }
+      return loadEmployeePerformance({ companyId: ctx.auth.companyId, employeeId: emp.id, userId: emp.user_id, days })
+    },
+    canViewEmployeePerformance: async (_: unknown, args: { employeeId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return false
+      return canViewEmployeePerformanceGW(ctx.auth, args.employeeId)
     },
 
     // The history of everything that moved stock through a store (lib/storeDocuments.ts). Store In rows follow the same branch scope as the Store In list.

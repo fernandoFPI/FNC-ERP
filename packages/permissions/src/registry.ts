@@ -476,6 +476,7 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
         permissions: [
           { key: 'hr.employees.view', label: 'View Employees', sortOrder: 500 },
           { key: 'hr.employees.edit', label: 'Manage Employees', sortOrder: 501 },
+          { key: 'hr.employees.performance', label: 'View Employee Performance', sortOrder: 502 },
         ],
       },
       {

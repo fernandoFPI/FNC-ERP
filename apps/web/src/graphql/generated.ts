@@ -975,6 +975,21 @@ export type FileDownloadUrlQueryVariables = Exact<{
 
 export type FileDownloadUrlQuery = { fileDownloadUrl: { downloadUrl: string, filename: string, mimeType: string, expiresInSeconds: number } };
 
+export type EmployeePerformanceQueryVariables = Exact<{
+  employeeId: string | number;
+  days?: number | null | undefined;
+}>;
+
+
+export type EmployeePerformanceQuery = { employeePerformance: { employeeId: string, linked: boolean, days: number | null, since: string | null, requisitions: { organized: number, completed: number, inProgress: number, cancelled: number, sentBack: number }, sentBackStages: Array<{ key: string, count: number, examples: Array<{ number: string, note: string | null }> }>, workSentBack: Array<{ key: string, count: number }>, trend: Array<{ month: string, total: number, sentBack: number }>, audit: { passedFirst: number, returned: number, passedAfterReturn: number }, claims: Array<{ key: string, filed: number, rejected: number }>, approver: Array<{ key: string, approved: number, sentBack: number, medianHours: number | null }> } | null };
+
+export type CanViewEmployeePerformanceQueryVariables = Exact<{
+  employeeId: string | number;
+}>;
+
+
+export type CanViewEmployeePerformanceQuery = { canViewEmployeePerformance: boolean };
+
 export type IntercoTransactionsQueryVariables = Exact<{
   fromCompanyId?: string | number | null | undefined;
   toCompanyId?: string | number | null | undefined;
