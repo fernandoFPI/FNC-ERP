@@ -356,8 +356,9 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: c.created_at,
         href: `/finance/expense-claims/${c.id}`,
-        // "Needs My Approval" lists requisitions only; expense claims stay in the queue, the overdue count and the action filter.
-        needsApproval: false,
+        // A claim waiting for approval is a sign-off the person is asked for. The funding decision that follows approval is
+        // Finance's own step, not a sign-off, so it stays out of the tile (it is still in the queue and the Overdue count).
+        needsApproval: !funding,
         priority: null,
       })
     }
@@ -376,8 +377,8 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: a.created_at,
         href: `/finance/advances/${a.id}`,
-        // Requisitions only under "Needs My Approval".
-        needsApproval: false,
+        // The manager's approval of an advance request is a sign-off.
+        needsApproval: true,
         priority: null,
       })
     }
@@ -417,8 +418,8 @@ export default function MyQueuePage() {
         role: i18n.t('queue.role.approver', { defaultValue: 'Approver' }),
         updatedAt: s.created_at,
         href: `/finance/advances/${s.advance_id}`,
-        // Requisitions only under "Needs My Approval".
-        needsApproval: false,
+        // Approving an advance settlement is a sign-off.
+        needsApproval: true,
         priority: null,
       })
     }

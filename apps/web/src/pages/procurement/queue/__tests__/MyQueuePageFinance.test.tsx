@@ -185,17 +185,17 @@ describe('what Finance puts in the queue', () => {
 })
 
 describe('"Needs My Approval"', () => {
-  it('counts requisitions only: no expense claim, advance, settlement or cash issue is in the tile', async () => {
+  it('counts the sign-offs: a submitted claim, a pending advance request and a settlement; not the funding decision or the cash issue', async () => {
     await renderPage()
     const tile = screen.getByRole('button', { name: /needs my approval/i })
-    expect(tile).toHaveTextContent('0')
+    expect(tile).toHaveTextContent('3')
   })
 
-  it('shows none of them when the tile is pressed', async () => {
+  it('shows the sign-offs when the tile is pressed, and leaves out the funding decision and the cash issue', async () => {
     await renderPage()
     fireEvent.click(screen.getByRole('button', { name: /needs my approval/i }))
-    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'ADV-CASH', 'SET-1'])
-      expect(shown(n)).toBe(false)
+    for (const n of ['EXP-SUBMITTED', 'ADV-PENDING', 'SET-1']) expect(shown(n)).toBe(true)
+    for (const n of ['EXP-FUNDING', 'ADV-CASH']) expect(shown(n)).toBe(false)
   })
 
   it('still lists every one of them when nothing is filtered', async () => {
@@ -204,10 +204,10 @@ describe('"Needs My Approval"', () => {
       expect(shown(n)).toBe(true)
   })
 
-  it('shows none of them for the old Approval Queue link either', async () => {
+  it('shows the same for the old Approval Queue link', async () => {
     await renderPage('/procurement/queue?filter=approval')
-    for (const n of ['EXP-SUBMITTED', 'EXP-FUNDING', 'ADV-PENDING', 'ADV-CASH', 'SET-1'])
-      expect(shown(n)).toBe(false)
+    for (const n of ['EXP-SUBMITTED', 'ADV-PENDING', 'SET-1']) expect(shown(n)).toBe(true)
+    for (const n of ['EXP-FUNDING', 'ADV-CASH']) expect(shown(n)).toBe(false)
   })
 })
 

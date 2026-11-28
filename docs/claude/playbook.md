@@ -3833,6 +3833,15 @@ Don't re-derive, check these first.
     every render and hides a stale one; same family as #60.3 from the other side) and the test delivered the advance rows after
     everything else. Remembered filters for this page are #70. Tests: 13 mutations on the Finance part killed (after the two fixes
     above). Not verified in a browser. Related to #24, #85, #70.
+    **Follow-up, 2026-11-28: the tile was narrowed to requisitions only on 11-23 (commits 8712670, 1a5c418) and hid real sign-offs.**
+    A user who approves expense claims saw "Needs My Approval 0" above three claims labelled "Pending approval". The narrowing was
+    deliberate and commented, which is why it survived (#44, #46: a comment records what was decided once). The tile now counts what
+    the list itself calls a sign-off: requisitions at Pending approval and Re-approval, expense claims at Pending approval, advance
+    requests at Pending approval and advance settlements at Pending approval. Still NOT counted, on purpose: the funding decision that
+    follows an approved claim (Finance's own step), the cash issue (a payment, 8712670) and purchase orders at pending approval
+    (whole-flow POs, left out on 11-23; say if they should count). Rule of thumb: the tile and the rows' status badge must agree, so
+    a row that says "Pending approval" is in the tile. Tests: `MyQueuePageFinance.test.tsx` (the "Needs My Approval" block; each of
+    the three flags mutation-checked, 4 kills).
 
 114. **A document filed in one company on another company's project: the guard existed on one purpose only, and a token refresh
     changed the company underneath a form that was already filled in.** NY-REQ-2026-0074 (Nishtimani Yakam, 44 electrical lines
