@@ -319,7 +319,8 @@
     passPOAudit(id: ID!): PurchaseOrder!
     failPOAudit(id: ID!, notes: String): PurchaseOrder!
     # Migration 337: Finance sends a child PO that failed review back to the requisition's Organizer Review. The PO keeps its number.
-    returnPOToOrganizer(id: ID!, reason: String!): PurchaseOrder!
+    # lineFlags: the lines Finance found wrong, each with its own reason (at least one). They are highlighted for the organizer in the reopened review.
+    returnPOToOrganizer(id: ID!, reason: String!, lineFlags: [LineFlagInput!]): PurchaseOrder!
     setPOLineAuditStatus(poId: ID!, lineId: ID!, auditStatus: String!, auditNote: String): POLine!
     setPOLineAccounting(poId: ID!, lineId: ID!, glAccountId: ID, costCenterId: ID): POLine!
     markPOLineBought(poId: ID!, lineId: ID!, bought: Boolean!): POLine!
@@ -2758,6 +2759,11 @@
     review_original_qty: String
     review_original_price: String
     review_original_currency: String
+    # When Finance sent the purchase order this purchase went into back to the organizer and flagged its line: why, who and when.
+    # Null for every other purchase, and once the round has ended.
+    finance_flag_reason: String
+    finance_flagged_by: String
+    finance_flagged_at: String
   }
 
   input RecordLinePurchaseInput {

@@ -13004,9 +13004,20 @@ export const resolvers = {
                      'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email),
                      -- organizer review (migration 329): what the purchase held before the organizer changed it (null = not changed)
                      'review_original_qty', plp.review_original_qty, 'review_original_price', plp.review_original_price,
-                     'review_original_currency', plp.review_original_currency
+                     'review_original_currency', plp.review_original_currency,
+                     -- Finance flagged this purchase's line when it sent the purchase order back to the organizer (playbook #131)
+                     'finance_flag_reason', ff.audit_note, 'finance_flagged_by', ff.audit_flagged_by_email,
+                     'finance_flagged_at', ff.audit_flagged_at
                    ) ORDER BY plp.bought_at), '[]')
                    FROM po_line_purchases plp
+                   LEFT JOIN LATERAL (
+                     SELECT cpl.audit_note, cpl.audit_flagged_by_email, cpl.audit_flagged_at
+                       FROM po_lines cpl
+                       JOIN purchase_orders cpo ON cpo.id = cpl.po_id
+                      WHERE cpl.purchase_id = plp.id AND cpl.audit_status = 'flagged'
+                        AND cpo.status = 'returned_to_organizer' AND cpo.requisition_id = pol.requisition_id
+                      LIMIT 1
+                   ) ff ON true
                    LEFT JOIN vendors v ON v.id=plp.vendor_id
                    LEFT JOIN document_attachments da ON da.id=plp.receipt_attachment_id
                    LEFT JOIN files rf ON rf.id=da.file_id
@@ -41882,7 +41893,7 @@ const phase5MutationResolvers = {
   // permission as Return for Correction (failPOAudit), a reason is required.
   returnPOToOrganizer: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags?: { lineId: string; reason: string }[] | null },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -41893,6 +41904,18 @@ const phase5MutationResolvers = {
       )
     const reason = args.reason.trim()
     if (!reason) throw new Error('reason is required')
+    // The lines Finance found wrong, each with what is wrong: the organizer sees them highlighted in the reopened review.
+    const lineFlags = (args.lineFlags ?? []).map((f) => ({
+      lineId: f.lineId,
+      reason: f.reason.trim(),
+    }))
+    if (lineFlags.length === 0)
+      throw new Error(
+        'Tick at least one line and say what is wrong with it, so the organizer knows what to fix',
+      )
+    if (lineFlags.some((f) => !f.reason)) throw new Error('Every flagged line needs a reason')
+    if (new Set(lineFlags.map((f) => f.lineId)).size !== lineFlags.length)
+      throw new Error('A line can be flagged only once')
     const client = await pool.connect()
     let reqId = ''
     let poNumber = ''
@@ -41975,6 +41998,30 @@ const phase5MutationResolvers = {
         throw new Error(
           `The purchase of "${unmatched.description ?? 'an item'}" could not be matched to a line of this purchase order, so it cannot go back to the review. Ask an administrator to change it with an edit request`,
         )
+
+      // The flagged lines must be lines of THIS purchase order (a line id of another document is refused, not silently ignored).
+      const flaggable = await client.query<{ id: string }>(
+        `SELECT id FROM po_lines WHERE id = ANY($1::uuid[]) AND po_id = $2`,
+        [lineFlags.map((f) => f.lineId), po.id],
+      )
+      if (flaggable.rows.length !== lineFlags.length)
+        throw new Error('One or more flagged lines do not belong to this purchase order')
+      const flagger = await client.query<{ email: string | null }>(
+        `SELECT email FROM users WHERE id=$1`,
+        [auth.userId],
+      )
+      for (const f of lineFlags) {
+        await client.query(
+          `UPDATE po_lines SET audit_status='flagged', audit_note=$1, audit_flagged_by_email=$2, audit_flagged_at=NOW() WHERE id=$3 AND po_id=$4`,
+          [f.reason, flagger.rows.at(0)?.email ?? null, f.lineId, po.id],
+        )
+      }
+      // A line flagged in the audit earlier and not ticked here is not one of the lines Finance is sending back: what the organizer
+      // sees is exactly the ticked set.
+      await client.query(
+        `UPDATE po_lines SET audit_status='pending', audit_note=NULL WHERE po_id=$1 AND audit_status='flagged' AND NOT (id = ANY($2::uuid[]))`,
+        [po.id, lineFlags.map((f) => f.lineId)],
+      )
 
       // An edit request approved after the PO was made may have changed a line without touching its purchase. The review shows
       // the purchase, so bring it level with what the PO line says now (the price that counts; a discount shown as such is

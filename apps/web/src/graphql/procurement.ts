@@ -991,8 +991,8 @@ export const PASS_PO_AUDIT = gql`
 
 // Finance sends a PO that failed its review back to the requisition's Organizer Review; the PO keeps its number (migration 337)
 export const RETURN_PO_TO_ORGANIZER = gql`
-  mutation ReturnPOToOrganizer($id: ID!, $reason: String!) {
-    returnPOToOrganizer(id: $id, reason: $reason) {
+  mutation ReturnPOToOrganizer($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]) {
+    returnPOToOrganizer(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }

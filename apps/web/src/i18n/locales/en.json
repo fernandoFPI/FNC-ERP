@@ -550,7 +550,11 @@
       "auditChecked": "Lines checked: {{done}} of {{total}}",
       "auditAllOk": "Every line is checked and OK",
       "auditFlaggedN": "Flagged: {{n}}",
-      "onlyAnAdminAfterApproval": "Only an administrator can change an approved purchase order. Ask an administrator to make the change."
+      "onlyAnAdminAfterApproval": "Only an administrator can change an approved purchase order. Ask an administrator to make the change.",
+      "returnToOrganizerLines": "Which lines are wrong?",
+      "returnToOrganizerLinesHint": "Tick each line that failed and say what is wrong with it. The organizer sees these lines highlighted, with your reason, when the review reopens.",
+      "returnToOrganizerLineReason": "What is wrong with this line?",
+      "returnToOrganizerLineReasonPlaceholder": "For example: the invoice says 45 USD, the purchase says 40"
     },
     "editReq": {
       "appliedAutomatically": "Applied straight away: the PO had not been approved yet, so no review was needed.",
@@ -1297,7 +1301,9 @@
       "quotedNote": "(quoted {{price}})",
       "addDiscountLabel": "Price after discount (optional)",
       "addDiscountCurrencyAria": "Currency of the price after discount",
-      "addDiscountHint": "If the vendor gave a discount, enter the unit price after it. It is the price that counts."
+      "addDiscountHint": "If the vendor gave a discount, enter the unit price after it. It is the price that counts.",
+      "statusFinanceFlagged": "Flagged by Finance",
+      "financeFlagBy": "Flagged by Finance ({{name}})"
     },
     "expenseStatus": {
       "draft": "Draft",

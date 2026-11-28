@@ -560,3 +560,49 @@ describe('the requisition page in the organizer review', () => {
     expect(document.body.textContent).not.toMatch(/req\.(review|status|detail)\./)
   })
 })
+
+describe('a line Finance flagged when it sent its purchase order back (playbook #131)', () => {
+  const flagged = () => {
+    const [first] = lineBase().purchases
+    return {
+      purchases: [
+        {
+          ...first,
+          finance_flag_reason: 'Invoice says 45 USD',
+          finance_flagged_by: 'finance@example.com',
+          finance_flagged_at: '2026-11-27T08:00:00Z',
+        },
+      ],
+    }
+  }
+  const rowOfPipe = () => {
+    const r = screen.getByText('Pipe 2in').closest('tr')
+    if (!r) throw new Error('no row')
+    return r
+  }
+
+  it('highlights the failing row in red, tags it and shows the reason on the purchase', async () => {
+    lineOver = flagged()
+    await open('organizer_review')
+    const r = rowOfPipe()
+    expect(within(r).getByText('Flagged by Finance')).toBeInTheDocument()
+    expect(within(r).getByTestId('finance-flag-note')).toHaveTextContent('Invoice says 45 USD')
+    expect(r.getAttribute('style') ?? '').toMatch(/border-inline-start: 4px solid/)
+    expect(r.getAttribute('style') ?? '').toMatch(/background/)
+  })
+
+  it('leaves the row plain when Finance did not flag it (the control for the test above)', async () => {
+    await open('organizer_review')
+    const r = rowOfPipe()
+    expect(within(r).queryByText('Flagged by Finance')).toBeNull()
+    expect(r.getAttribute('style') ?? '').not.toMatch(/border-inline-start: 4px solid/)
+  })
+
+  it('does not highlight outside the review, even if a flag is still on the purchase', async () => {
+    lineOver = flagged()
+    await open('sourcing', null)
+    const r = rowOfPipe()
+    expect(within(r).queryByText('Flagged by Finance')).toBeNull()
+    expect(r.getAttribute('style') ?? '').not.toMatch(/border-inline-start: 4px solid/)
+  })
+})

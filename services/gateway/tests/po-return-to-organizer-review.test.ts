@@ -226,8 +226,15 @@ async function poLines(poId: string) {
     )
   ).rows
 }
-const send = (poId: string, reason = 'Prices on the vendor invoice do not match') =>
-  M.returnPOToOrganizer(null, { id: poId, reason }, ctxFor('admin'))
+// Finance has to say which lines are wrong: by default the first line of the purchase order, with a reason of its own.
+const send = async (
+  poId: string,
+  reason = 'Prices on the vendor invoice do not match',
+  lineFlags?: { lineId: string; reason: string }[],
+) => {
+  const flags = lineFlags ?? [{ lineId: (await poLines(poId))[0]!.id, reason: 'The invoice price is different' }]
+  return M.returnPOToOrganizer(null, { id: poId, reason, lineFlags: flags }, ctxFor('admin'))
+}
 
 async function reviewOf(reqId: string, who: Who = 'organizer') {
   const res = await server.executeOperation(
@@ -681,5 +688,136 @@ describe('approving the reopened review applies the changes to the same purchase
     // it is no longer marked as added in a review
     const marked = await pool.query(`SELECT COUNT(*) AS c FROM po_lines WHERE requisition_id=$1 AND review_added_at IS NOT NULL`, [f.reqId])
     expect(Number(marked.rows[0]!.c)).toBe(0)
+  })
+})
+
+describe('the lines Finance flags when it sends a purchase order back (playbook #131)', () => {
+  const flagsOf = async (poId: string) =>
+    (
+      await pool.query<{ id: string; audit_status: string | null; audit_note: string | null; audit_flagged_by_email: string | null }>(
+        `SELECT id, audit_status, audit_note, audit_flagged_by_email FROM po_lines WHERE po_id=$1 ORDER BY line_number`,
+        [poId],
+      )
+    ).rows
+  interface SeenPurchase {
+    id: string
+    finance_flag_reason: string | null
+    finance_flagged_by: string | null
+    finance_flagged_at: string | null
+  }
+  const purchasesSeenByOrganizer = async (reqId: string): Promise<SeenPurchase[]> => {
+    const res = await server.executeOperation(
+      {
+        query: `query($id: ID!) { requisition(id: $id) { lines { id purchases { id finance_flag_reason finance_flagged_by finance_flagged_at } } } }`,
+        variables: { id: reqId },
+      },
+      { contextValue: ctxFor('organizer') },
+    )
+    if (res.body.kind !== 'single') throw new Error('expected a single result')
+    expect(res.body.singleResult.errors).toBeUndefined()
+    const data = res.body.singleResult.data as { requisition: { lines: { id: string; purchases: SeenPurchase[] | null }[] } }
+    return data.requisition.lines.flatMap((l) => l.purchases ?? [])
+  }
+  // the purchase a PO line was made from
+  const purchaseOf = async (lineId: string): Promise<string> =>
+    (await pool.query<{ purchase_id: string }>(`SELECT purchase_id FROM po_lines WHERE id=$1`, [lineId])).rows[0]!.purchase_id
+
+  it('needs at least one line, and a reason for each', async () => {
+    const f = await reachFinanceReview()
+    const [l1] = await poLines(f.poA)
+    const call = (lineFlags: { lineId: string; reason: string }[] | null | undefined) =>
+      M.returnPOToOrganizer(null, { id: f.poA, reason: 'Wrong prices', lineFlags }, ctxFor('admin'))
+    await expect(call(undefined)).rejects.toThrow(/Tick at least one line/)
+    await expect(call(null)).rejects.toThrow(/Tick at least one line/)
+    await expect(call([])).rejects.toThrow(/Tick at least one line/)
+    await expect(call([{ lineId: l1!.id, reason: '   ' }])).rejects.toThrow(/Every flagged line needs a reason/)
+    await expect(
+      call([
+        { lineId: l1!.id, reason: 'a' },
+        { lineId: l1!.id, reason: 'b' },
+      ]),
+    ).rejects.toThrow(/only once/)
+    // nothing happened
+    expect((await poRow(f.poA)).status).toBe('finance_review')
+    expect(await reqStatus(f.reqId)).toBe('sourcing')
+    expect((await flagsOf(f.poA)).every((l) => l.audit_status !== 'flagged')).toBe(true)
+  })
+
+  it('refuses a line of another purchase order and writes nothing', async () => {
+    const f = await reachFinanceReview()
+    const [own] = await poLines(f.poA)
+    const [other] = await poLines(f.poB)
+    await expect(
+      M.returnPOToOrganizer(
+        null,
+        {
+          id: f.poA,
+          reason: 'x',
+          lineFlags: [
+            { lineId: own!.id, reason: 'bad' },
+            { lineId: other!.id, reason: 'not mine' },
+          ],
+        },
+        ctxFor('admin'),
+      ),
+    ).rejects.toThrow(/do not belong to this purchase order/)
+    expect((await poRow(f.poA)).status).toBe('finance_review')
+    expect((await flagsOf(f.poA)).every((l) => l.audit_status !== 'flagged')).toBe(true)
+    expect((await flagsOf(f.poB)).every((l) => l.audit_status !== 'flagged')).toBe(true)
+  })
+
+  it('saves each ticked line with its own reason and who flagged it, and only those lines', async () => {
+    const f = await reachFinanceReview()
+    const lines = await poLines(f.poA)
+    await send(f.poA, 'Prices do not match', [{ lineId: lines[1]!.id, reason: 'Invoice says 45 USD, we paid 40' }])
+    const after = await flagsOf(f.poA)
+    const flagged = after.filter((l) => l.audit_status === 'flagged')
+    expect(flagged).toHaveLength(1)
+    expect(flagged[0]).toMatchObject({ id: lines[1]!.id, audit_note: 'Invoice says 45 USD, we paid 40' })
+    expect(flagged[0]!.audit_flagged_by_email).toMatch(/@/)
+    expect(after.find((l) => l.id === lines[0]!.id)!.audit_status).not.toBe('flagged')
+    // the other purchase order is untouched
+    expect((await flagsOf(f.poB)).every((l) => l.audit_status !== 'flagged')).toBe(true)
+  })
+
+  it('a line flagged in the audit earlier but not ticked now is not one of the lines sent back', async () => {
+    const f = await reachFinanceReview()
+    const lines = await poLines(f.poA)
+    await pool.query(`UPDATE po_lines SET audit_status='flagged', audit_note='old note' WHERE id=$1`, [lines[0]!.id])
+    await send(f.poA, 'x', [{ lineId: lines[1]!.id, reason: 'this one' }])
+    const after = await flagsOf(f.poA)
+    expect(after.find((l) => l.id === lines[0]!.id)).toMatchObject({ audit_status: 'pending', audit_note: null })
+    expect(after.find((l) => l.id === lines[1]!.id)!.audit_status).toBe('flagged')
+  })
+
+  it('shows the organizer which purchases failed and why, in the reopened review', async () => {
+    const f = await reachFinanceReview()
+    const lines = await poLines(f.poA)
+    // a line Finance checked and passed, with a note of its own, is not a failing line
+    await pool.query(`UPDATE po_lines SET audit_status='ok', audit_note='looks fine' WHERE id=$1`, [lines[1]!.id])
+    await send(f.poA, 'Prices do not match', [{ lineId: lines[0]!.id, reason: 'Invoice says 45 USD' }])
+    const seen = await purchasesSeenByOrganizer(f.reqId)
+    const flagged = seen.filter((p) => p.finance_flag_reason)
+    expect(flagged.map((p) => p.id)).toEqual([await purchaseOf(lines[0]!.id)])
+    expect(flagged[0]!.finance_flag_reason).toBe('Invoice says 45 USD')
+    expect(flagged[0]!.finance_flagged_by).toMatch(/@/)
+    expect(flagged[0]!.finance_flagged_at).toBeTruthy()
+    // the purchase of the other vendor, whose purchase order was not sent back, carries no flag
+    expect(seen.find((p) => p.id === f.purchases[2])!.finance_flag_reason).toBeNull()
+  })
+
+  it('shows no flag before the purchase order is sent back, and none once the round has ended', async () => {
+    const f = await reachFinanceReview()
+    const lines = await poLines(f.poA)
+    // flagged in the audit but still at Finance review: not the organizer's business yet
+    await pool.query(`UPDATE po_lines SET audit_status='flagged', audit_note='audit note' WHERE id=$1`, [lines[0]!.id])
+    expect((await purchasesSeenByOrganizer(f.reqId)).every((p) => p.finance_flag_reason === null)).toBe(true)
+    await send(f.poA, 'x', [{ lineId: lines[0]!.id, reason: 'bad' }])
+    expect((await purchasesSeenByOrganizer(f.reqId)).some((p) => p.finance_flag_reason === 'bad')).toBe(true)
+    await M.editReviewPurchase(null, { purchaseId: f.purchases[0], actualUnitPrice: 41 }, ctxFor('organizer'))
+    await passReview(f.reqId, ctxFor('organizer'))
+    expect((await poRow(f.poA)).status).toBe('finance_review')
+    expect((await purchasesSeenByOrganizer(f.reqId)).every((p) => p.finance_flag_reason === null)).toBe(true)
+    expect((await flagsOf(f.poA)).every((l) => l.audit_status === 'pending')).toBe(true)
   })
 })

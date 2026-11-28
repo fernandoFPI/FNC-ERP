@@ -820,6 +820,8 @@ export default function PurchaseOrderDetail() {
   // Finance sending a PO that failed its review back to the requisition's Organizer Review (migration 337)
   const [returnToOrganizerOpen, setReturnToOrganizerOpen] = useState(false)
   const [returnToOrganizerReason, setReturnToOrganizerReason] = useState('')
+  // The lines Finance found wrong, each with its own reason: lineId -> reason. The organizer sees them highlighted in the review.
+  const [returnToOrganizerFlags, setReturnToOrganizerFlags] = useState<Record<string, string>>({})
   const [confirmDeletePO, setConfirmDeletePO] = useState(false)
   const [lineComments, setLineComments] = useState<Record<string, LineComment[]>>({})
   const [commentModal, setCommentModal] = useState<{ lineId: string; description: string } | null>(
@@ -1162,11 +1164,12 @@ export default function PurchaseOrderDetail() {
   })
   const [returnToOrganizer, { loading: lReturnOrg }] = useMutation<
     { returnPOToOrganizer: { id: string; status: string } },
-    { id: string; reason: string }
+    { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] }
   >(RETURN_PO_TO_ORGANIZER, {
     onCompleted: () => {
       setReturnToOrganizerOpen(false)
       setReturnToOrganizerReason('')
+      setReturnToOrganizerFlags({})
       void refetch()
     },
     onError: onErr,
@@ -6780,6 +6783,14 @@ export default function PurchaseOrderDetail() {
                   variant="outline"
                   disabled={lock.lockedByOther}
                   onClick={() => {
+                    // lines already flagged in the audit start ticked, with the note Finance already wrote
+                    setReturnToOrganizerFlags(
+                      Object.fromEntries(
+                        po.lines
+                          .filter((l) => l.audit_status === 'flagged')
+                          .map((l) => [l.id, l.audit_note ?? '']),
+                      ),
+                    )
                     setReturnToOrganizerOpen(true)
                   }}
                 >
@@ -7285,11 +7296,64 @@ export default function PurchaseOrderDetail() {
           setReturnToOrganizerOpen(false)
         }}
         title={t('po.detail.returnToOrganizer')}
-        size="sm"
+        size="md"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ fontSize: '14px', color: theme.textSecondary, lineHeight: 1.5 }}>
             {t('po.detail.returnToOrganizerExplain')}
+          </div>
+          <div
+            data-testid="return-flag-lines"
+            style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+          >
+            <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+              {t('po.detail.returnToOrganizerLines')}
+            </div>
+            <div style={{ fontSize: '12.5px', color: theme.textSecondary }}>
+              {t('po.detail.returnToOrganizerLinesHint')}
+            </div>
+            {po.lines.map((l, idx) => {
+              const ticked = l.id in returnToOrganizerFlags
+              return (
+                <div
+                  key={l.id}
+                  style={{
+                    border: `1px solid ${ticked ? theme.danger : theme.border}`,
+                    background: ticked ? `${theme.danger}0c` : 'transparent',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
+                  <Checkbox
+                    label={`#${idx + 1} ${(l.description ? l.description : l.product_name) ?? ''}`}
+                    checked={ticked}
+                    onChange={() => {
+                      setReturnToOrganizerFlags((cur) =>
+                        l.id in cur
+                          ? Object.fromEntries(Object.entries(cur).filter(([id]) => id !== l.id))
+                          : { ...cur, [l.id]: '' },
+                      )
+                    }}
+                    large
+                  />
+                  {ticked && (
+                    <Textarea
+                      field
+                      label={t('po.detail.returnToOrganizerLineReason')}
+                      placeholder={t('po.detail.returnToOrganizerLineReasonPlaceholder')}
+                      value={returnToOrganizerFlags[l.id] ?? ''}
+                      rows={2}
+                      onChange={(e) => {
+                        setReturnToOrganizerFlags((cur) => ({ ...cur, [l.id]: e.target.value }))
+                      }}
+                    />
+                  )}
+                </div>
+              )
+            })}
           </div>
           <Textarea
             field
@@ -7314,10 +7378,21 @@ export default function PurchaseOrderDetail() {
             <ActionButton
               variant="solid"
               loading={lReturnOrg}
-              disabled={!returnToOrganizerReason.trim()}
+              disabled={
+                !returnToOrganizerReason.trim() ||
+                Object.keys(returnToOrganizerFlags).length === 0 ||
+                Object.values(returnToOrganizerFlags).some((r) => !r.trim())
+              }
               onClick={() =>
                 void returnToOrganizer({
-                  variables: { id: po.id, reason: returnToOrganizerReason.trim() },
+                  variables: {
+                    id: po.id,
+                    reason: returnToOrganizerReason.trim(),
+                    lineFlags: Object.entries(returnToOrganizerFlags).map(([lineId, r]) => ({
+                      lineId,
+                      reason: r.trim(),
+                    })),
+                  },
                 })
               }
             >

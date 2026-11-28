@@ -61,6 +61,7 @@ import {
   ReviewPhoneList,
   ReviewPurchasesCell,
   ReviewSummaryStrip,
+  financeFlaggedPurchases,
   reviewLineTotals,
   useOrganizerReview,
 } from '../../../components/procurement/OrganizerReviewPanel'
@@ -2448,6 +2449,13 @@ export default function RequisitionDetail() {
                       return {
                         borderInlineStart: `4px solid ${theme.accent}`,
                         background: `${theme.accent}0c`,
+                      }
+                    }
+                    // a line Finance sent back with a reason (the purchase order was returned to this review): red, so it is the first thing seen
+                    if (reviewCtl.active && financeFlaggedPurchases(l).length > 0) {
+                      return {
+                        borderInlineStart: `4px solid ${theme.danger}`,
+                        background: `${theme.danger}12`,
                       }
                     }
                     if (!l.flag_reason || l.flag_resolved_at)

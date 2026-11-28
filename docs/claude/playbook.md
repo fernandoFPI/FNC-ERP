@@ -4574,3 +4574,27 @@ Don't re-derive, check these first.
     pipeline runs it). Tests: `services/gateway/tests/employee-performance.test.ts` (real Postgres through the real resolvers), web
     `pages/hr/employees/__tests__/EmployeePerformanceTab.test.tsx`, `EmployeeDetailPerformanceTab.test.tsx` and `lib/__tests__/employeePerformance.test.ts`.
     Related to #24, #48, #128, #34.
+
+131. **A "send it back" action with one overall reason leaves the receiver hunting for what failed; reuse the columns that already hold the per-line
+    answer.** Finance's Return to Organizer (#129) took one reason for the whole purchase order, so the organizer opened the reopened review and had to guess
+    which of the lines was wrong. The requisition's own send-backs already flag lines with a reason each; this one did not. Fix, no migration: the window
+    lists the order's lines, Finance ticks each failing line and writes what is wrong with it (at least one line, a reason for every ticked line, plus the
+    overall reason as before), and the server saves them in the columns the Finance audit already uses for a flagged line (`po_lines.audit_status='flagged'`,
+    `audit_note`, `audit_flagged_by_email`, `audit_flagged_at`). A line flagged in the audit earlier and not ticked now goes back to pending, so what the
+    organizer sees is exactly the ticked set; the window opens with the audit-flagged lines already ticked with their note. The line ids must be lines of THIS
+    purchase order (another document's id is refused and nothing is written). The reopened review reads the flag through `po_lines.purchase_id` (#129's link
+    from a PO line to the purchase it was made from) and puts `finance_flag_reason` / `finance_flagged_by` / `finance_flagged_at` on the PURCHASE (a line can
+    have purchases from two vendors and only one order came back), only while that order is in `returned_to_organizer`; once the round ends the order moves on
+    and the existing reapply resets its lines' audit to pending, so the flag disappears without any new cleanup code. The organizer sees the failing line in
+    red on the Lines table row, a "Flagged by Finance" tag before every other status, the reason and the person on the purchase itself (not behind the arrow),
+    and on a phone a red card with the reason. Lessons: (a) before adding a column for a new kind of per-line note, look for the column that already holds the
+    answer (here the audit flag), it saved a migration and kept the audit table and the review telling the same story; (b) a field the old client does not send
+    is a clear refusal on the server, not a silent empty list (`lineFlags` is nullable in the schema so an old tab gets "Tick at least one line", not a
+    validation error); (c) a mutation that must change the data of ALL lines of one document (flag the ticked, reset the rest) needs a test where a line is
+    flagged and NOT ticked. Mutation-checked: 14 on the gateway (one equivalent survivor: the lookup's requisition match, because a purchase belongs to exactly
+    one requisition) and 19 on the web (one equivalent survivor: clearing the window's state after sending, because opening it resets the state anyway); six
+    first survived or were missing a test (the phone card's colours, the overall reason being required, unticking, a passed line's note) and got one each.
+    Not done: the flag is not marked "answered" when the organizer changes the purchase; the notification to the organizer does not list the flagged lines. Not
+    verified in a browser, in Arabic on a real page or on a phone. Tests: `services/gateway/tests/po-return-to-organizer-review.test.ts` (6 more),
+    web `poReturnToOrganizerPage.test.tsx`, `components/procurement/__tests__/OrganizerReviewFinanceFlags.test.tsx` and `RequisitionDetailReview.test.tsx`.
+    Related to #129, #24, #36, #58.
