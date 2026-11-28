@@ -37,7 +37,8 @@ describe('the status groups', () => {
   const migration = fs.readFileSync(
     path.resolve(
       __dirname,
-      '../../../../../packages/db/migrations/258_g1_requisition_split_phase1.sql',
+      // the LATEST migration that rewrote the constraint (258 made the child statuses, 337 added returned_to_organizer)
+      '../../../../../packages/db/migrations/337_po_return_to_organizer_review.sql',
     ),
     'utf8',
   )
@@ -47,7 +48,7 @@ describe('the status groups', () => {
   const dbStatuses = [...(constraint?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
 
   it('read the real purchase_orders_status_check', () => {
-    expect(dbStatuses.length).toBe(20)
+    expect(dbStatuses.length).toBe(21)
   })
 
   it('place every status in exactly one group (a new status fails here until it is classified)', () => {

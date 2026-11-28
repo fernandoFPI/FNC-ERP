@@ -32,6 +32,7 @@ import {
   SEND_PO_TO_AUDIT,
   PASS_PO_AUDIT,
   FAIL_PO_AUDIT,
+  RETURN_PO_TO_ORGANIZER,
   SET_PO_LINE_AUDIT_STATUS,
   COMPLETE_PO,
   DELETE_PO,
@@ -233,6 +234,9 @@ export interface PO {
   // its status vocabulary diverges from a legacy PO's from 'bought' onward
   // (see CHILD_PO_STATUSES in po-constants.ts).
   requisition_id?: string | null
+  // Set while Finance has sent this PO back to its requisition's Organizer Review (migration 337)
+  returned_to_organizer_at?: string | null
+  returned_to_organizer_reason?: string | null
   requisitionNumber?: string | null
   // Server-computed: true when the caller isn't the organizer, an admin, the
   // finance team (once at finance_audit+), or the position holder for this
@@ -813,6 +817,9 @@ export default function PurchaseOrderDetail() {
   }, [id])
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  // Finance sending a PO that failed its review back to the requisition's Organizer Review (migration 337)
+  const [returnToOrganizerOpen, setReturnToOrganizerOpen] = useState(false)
+  const [returnToOrganizerReason, setReturnToOrganizerReason] = useState('')
   const [confirmDeletePO, setConfirmDeletePO] = useState(false)
   const [lineComments, setLineComments] = useState<Record<string, LineComment[]>>({})
   const [commentModal, setCommentModal] = useState<{ lineId: string; description: string } | null>(
@@ -1149,6 +1156,17 @@ export default function PurchaseOrderDetail() {
   const [passAudit, { loading: lPass }] = useMutation<PassPoAuditMutation, PassPoAuditMutationVariables>(PASS_PO_AUDIT, mutOpts)
   const [failAudit] = useMutation<FailPoAuditMutation, FailPoAuditMutationVariables>(FAIL_PO_AUDIT, {
     onCompleted: () => {
+      void refetch()
+    },
+    onError: onErr,
+  })
+  const [returnToOrganizer, { loading: lReturnOrg }] = useMutation<
+    { returnPOToOrganizer: { id: string; status: string } },
+    { id: string; reason: string }
+  >(RETURN_PO_TO_ORGANIZER, {
+    onCompleted: () => {
+      setReturnToOrganizerOpen(false)
+      setReturnToOrganizerReason('')
       void refetch()
     },
     onError: onErr,
@@ -6757,6 +6775,17 @@ export default function PurchaseOrderDetail() {
         >
           {canAudit && (
             <>
+              {po.requisition_id && po.status === 'finance_review' && (
+                <ActionButton
+                  variant="outline"
+                  disabled={lock.lockedByOther}
+                  onClick={() => {
+                    setReturnToOrganizerOpen(true)
+                  }}
+                >
+                  {t('po.detail.returnToOrganizer')}
+                </ActionButton>
+              )}
               <ActionButton
                 variant="outline"
                 disabled={lock.lockedByOther}
@@ -6781,6 +6810,30 @@ export default function PurchaseOrderDetail() {
                     : t('po.detail.passAuditFlagged', { count: auditState.flagged })}
               </ActionButton>
             </>
+          )}
+        </StageActionBar>
+      )}
+
+      {/* Finance sent this PO back to the organizer (migration 337, playbook #129): it is locked and keeps its number, and
+          leaves this status when the requisition's review is approved again. Anyone who opens it is told and pointed at the review. */}
+      {po.status === 'returned_to_organizer' && (
+        <StageActionBar
+          title={`${t('po.detail.nextStep')}: ${t('po.detail.returnedToOrganizerStep')}`}
+          hint={
+            po.returned_to_organizer_reason
+              ? t('po.detail.returnedToOrganizerHint', { reason: po.returned_to_organizer_reason })
+              : t('po.detail.returnedToOrganizerHintNoReason')
+          }
+        >
+          {po.requisition_id && (
+            <ActionButton
+              variant="solid"
+              onClick={() => {
+                navigate(`/procurement/requisitions/${po.requisition_id ?? ''}`)
+              }}
+            >
+              {t('po.detail.openOrganizerReview')}
+            </ActionButton>
           )}
         </StageActionBar>
       )}
@@ -7225,6 +7278,54 @@ export default function PurchaseOrderDetail() {
         confirmLabel={t('po.detail.delete')}
         confirmVariant="danger"
       />
+
+      <Modal
+        open={returnToOrganizerOpen}
+        onClose={() => {
+          setReturnToOrganizerOpen(false)
+        }}
+        title={t('po.detail.returnToOrganizer')}
+        size="sm"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ fontSize: '14px', color: theme.textSecondary, lineHeight: 1.5 }}>
+            {t('po.detail.returnToOrganizerExplain')}
+          </div>
+          <Textarea
+            field
+            label={t('po.detail.returnToOrganizerReasonLabel')}
+            value={returnToOrganizerReason}
+            rows={4}
+            onChange={(e) => {
+              setReturnToOrganizerReason(e.target.value)
+            }}
+          />
+          <div
+            style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}
+          >
+            <ActionButton
+              variant="outline"
+              onClick={() => {
+                setReturnToOrganizerOpen(false)
+              }}
+            >
+              {t('po.detail.cancel')}
+            </ActionButton>
+            <ActionButton
+              variant="solid"
+              loading={lReturnOrg}
+              disabled={!returnToOrganizerReason.trim()}
+              onClick={() =>
+                void returnToOrganizer({
+                  variables: { id: po.id, reason: returnToOrganizerReason.trim() },
+                })
+              }
+            >
+              {t('po.detail.returnToOrganizerConfirm')}
+            </ActionButton>
+          </div>
+        </div>
+      </Modal>
 
       {/* Actions: cancel this PO (with a reason) and, for system-level users, the status override. Same gates as the old
           popover: the button above decides who sees it, the cancel part is hidden once the PO is cancelled or deleted,

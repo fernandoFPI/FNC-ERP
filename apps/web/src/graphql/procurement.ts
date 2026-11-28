@@ -116,6 +116,9 @@ export const PURCHASE_ORDER_QUERY = gql`
       id
       po_number
       status
+      # set while Finance has sent the PO back to its requisition's Organizer Review (migration 337)
+      returned_to_organizer_at
+      returned_to_organizer_reason
       requisition_id
       currency_code
       total_amount
@@ -980,6 +983,16 @@ export const SEND_PO_TO_AUDIT = gql`
 export const PASS_PO_AUDIT = gql`
   mutation PassPOAudit($id: ID!) {
     passPOAudit(id: $id) {
+      id
+      status
+    }
+  }
+`
+
+// Finance sends a PO that failed its review back to the requisition's Organizer Review; the PO keeps its number (migration 337)
+export const RETURN_PO_TO_ORGANIZER = gql`
+  mutation ReturnPOToOrganizer($id: ID!, $reason: String!) {
+    returnPOToOrganizer(id: $id, reason: $reason) {
       id
       status
     }

@@ -43,6 +43,7 @@ export const APPROVED_OR_LATER_PO_STATUSES: readonly string[] = [
   'goods_received',
   'finance_audit',
   'finance_review',
+  'returned_to_organizer',
   'invoiced',
   'payment_pending',
   'completed',

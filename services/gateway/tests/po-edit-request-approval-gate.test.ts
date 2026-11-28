@@ -47,6 +47,11 @@ const NEEDS_APPROVAL = [
   'closed',
 ]
 
+// A PO Finance sent back to the organizer's review (playbook #129). It needs approval like every post-approval status, but an edit
+// request is refused outright while it is held (its changes are made in the review), so it is not in the lists the tests below file
+// requests against.
+const HELD_IN_REVIEW = ['returned_to_organizer']
+
 let requesterId: string
 let adminId: string
 
@@ -146,6 +151,7 @@ describe('the gate itself', () => {
     expect([...AUTO_APPLY_PO_STATUSES].sort()).toEqual([...AUTO_APPLY].sort())
     for (const s of AUTO_APPLY) expect(poEditNeedsApproval(s)).toBe(false)
     for (const s of NEEDS_APPROVAL) expect(poEditNeedsApproval(s)).toBe(true)
+    for (const s of HELD_IN_REVIEW) expect(poEditNeedsApproval(s)).toBe(true)
   })
 
   it('treats a status it has never heard of as needing approval (safe by default)', () => {
@@ -161,7 +167,7 @@ describe('the gate itself', () => {
     const inDb = [...r.rows[0]!.def.matchAll(/'([a-z_]+)'::character varying/g)].map((m) => m[1]!)
     expect(inDb.length).toBeGreaterThan(15)
     // A status added by a migration lands here until someone decides which side of the gate it is on.
-    expect([...inDb].sort()).toEqual([...AUTO_APPLY, ...NEEDS_APPROVAL].sort())
+    expect([...inDb].sort()).toEqual([...AUTO_APPLY, ...NEEDS_APPROVAL, ...HELD_IN_REVIEW].sort())
   })
 })
 

@@ -36,6 +36,8 @@ export const CHILD_PO_STATUSES = [
   { key: 'bought', label: 'Bought', sequence: 8.5 },
   { key: 'goods_received', label: 'Goods received', sequence: 9 },
   { key: 'finance_review', label: 'Finance review', sequence: 10 },
+  // Finance sent a PO that failed its review back to the requisition's Organizer Review (migration 337); it keeps its number
+  { key: 'returned_to_organizer', label: 'Returned to organizer', sequence: 10.5 },
   { key: 'payment_pending', label: 'Payment pending', sequence: 11 },
   { key: 'closed', label: 'Closed', sequence: 12 },
 ] as const
@@ -90,7 +92,8 @@ export const PO_PHASES = [
 export const CHILD_PO_PHASES = [
   { key: 'bought', statuses: ['bought'] },
   { key: 'goods_received', statuses: ['goods_received'] },
-  { key: 'finance_review', statuses: ['finance_review'] },
+  // a PO sent back to the organizer is still in Finance's stretch of the process: the bar does not move
+  { key: 'finance_review', statuses: ['finance_review', 'returned_to_organizer'] },
   { key: 'payment_pending', statuses: ['payment_pending'] },
   { key: 'closed', statuses: ['closed'] },
 ] as const
@@ -254,6 +257,12 @@ export const PO_STATUS_ACTIONS: Record<
     description: 'Finance marks the child PO as closed after payment voucher is paid',
     requiredRole: 'finance',
   },
+  returned_to_organizer: {
+    label: 'Waiting for the organizer',
+    description:
+      'Finance sent this purchase order back to its requisition’s Organizer Review. It keeps its number and is locked until that review is approved again.',
+    isOrganizer: true,
+  },
 }
 
 export function getPOStatusVariant(status: string): BadgeVariant {
@@ -295,6 +304,8 @@ export function getPOStatusVariant(status: string): BadgeVariant {
       return 'accent'
     case 'finance_review':
       return 'warning'
+    case 'returned_to_organizer':
+      return 'danger'
     case 'payment_pending':
       return 'info'
     case 'closed':

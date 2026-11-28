@@ -173,6 +173,8 @@ interface Purchase {
 
 interface ReqLine {
   id: string
+  // set on a line the fork made from a purchase; a reopened review shows the original line only (migration 337)
+  origin_line_id?: string | null
   description?: string | null
   product_id?: string | null
   product_name?: string | null
@@ -2433,7 +2435,11 @@ export default function RequisitionDetail() {
                 <Table
                   columns={shownLineColumns}
                   mobileLayout="fields"
-                  data={req.lines}
+                  data={
+                    reviewCtl.active && reviewCtl.reopened
+                      ? req.lines.filter((l) => !l.origin_line_id)
+                      : req.lines
+                  }
                   rowKey="id"
                   getRowStyle={(l) => {
                     // Currently checked for the reject box in progress — takes

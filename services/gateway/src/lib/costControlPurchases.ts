@@ -23,6 +23,8 @@ export const COMMITTED_PO_STATUSES = [
   'goods_received',
   'finance_audit',
   'finance_review',
+  // sent back to the organizer's review by Finance (playbook #129): still ordered and not settled
+  'returned_to_organizer',
   'invoiced',
   'payment_pending',
 ] as const
