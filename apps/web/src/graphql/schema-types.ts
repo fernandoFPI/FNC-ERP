@@ -2697,6 +2697,7 @@ export type Mutation = {
   resumeProject: Project;
   retryDLQEntry: Scalars['Boolean']['output'];
   retryOutboxEvent: Scalars['Boolean']['output'];
+  returnPOToOrganizer: PurchaseOrder;
   revealBankDetails?: Maybe<BankDetailsResult>;
   reverseReceipt: PoReceipt;
   reviseBid: BidCommercialSummary;
@@ -4923,6 +4924,12 @@ export type MutationRetryDlqEntryArgs = {
 
 export type MutationRetryOutboxEventArgs = {
   eventId: Scalars['ID']['input'];
+};
+
+
+export type MutationReturnPoToOrganizerArgs = {
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
 };
 
 
@@ -7733,6 +7740,8 @@ export type PurchaseOrder = {
   requisitionNumber?: Maybe<Scalars['String']['output']>;
   requisition_id?: Maybe<Scalars['ID']['output']>;
   returnedTotals: Array<PoReturnTotal>;
+  returned_to_organizer_at?: Maybe<Scalars['String']['output']>;
+  returned_to_organizer_reason?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   store_keeper_id?: Maybe<Scalars['ID']['output']>;
   store_pricing_id?: Maybe<Scalars['ID']['output']>;
@@ -9516,6 +9525,7 @@ export type RequisitionReview = {
   organizer_bought_count: Scalars['Int']['output'];
   removed_count: Scalars['Int']['output'];
   removed_lines: Array<RequisitionReviewRemovedLine>;
+  reopened_pos?: Maybe<Array<RequisitionReviewReopenedPo>>;
   stock_review?: Maybe<RequisitionStockReview>;
   stocked_count: Scalars['Int']['output'];
   totals: Array<RequisitionReviewTotal>;
@@ -9550,6 +9560,15 @@ export type RequisitionReviewRemovedPurchase = {
   price?: Maybe<Scalars['String']['output']>;
   qty?: Maybe<Scalars['String']['output']>;
   vendor?: Maybe<Scalars['String']['output']>;
+};
+
+export type RequisitionReviewReopenedPo = {
+  at?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  po_number: Scalars['String']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  vendor_id: Scalars['ID']['output'];
+  vendor_name?: Maybe<Scalars['String']['output']>;
 };
 
 export type RequisitionReviewTotal = {
