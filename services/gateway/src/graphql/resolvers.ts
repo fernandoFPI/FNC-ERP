@@ -107,6 +107,13 @@ import {
   offsetVendorReturnCost,
 } from '../lib/directDeliveryCost.js'
 import {
+  RETURNED_TO_ORGANIZER,
+  lineNeedsNewReceipt,
+  purchaseChangesLine,
+  reopenedNotAvailable,
+  returnTargetStatus,
+} from '../lib/poReturnReview.js'
+import {
   AUTO_APPLIED_REQUISITION_REVIEW_NOTE,
   AUTO_APPLIED_REVIEW_NOTE,
   isAutoAppliedEditRequest,
@@ -2839,6 +2846,446 @@ async function loadRequisitionInReviewGW(
   return row
 }
 
+// ── A review reopened for a purchase order Finance sent back (migration 337, playbook #129) ─────────────────────────────
+// The purchase orders held in `returned_to_organizer` are the ones the reopened review may change; everything else on the
+// requisition (other vendors' POs, stock) is read-only in it. A purchase belongs to a held PO through its vendor: the fork makes
+// one child PO per vendor per requisition.
+interface HeldPOGW {
+  id: string
+  po_number: string
+  vendor_id: string
+}
+
+type Runner = (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>
+
+async function heldPurchaseOrdersGW(run: Runner, reqId: string): Promise<HeldPOGW[]> {
+  const r = await run(
+    `SELECT id, po_number, vendor_id FROM purchase_orders
+      WHERE requisition_id=$1 AND status=$2 ORDER BY po_number`,
+    [reqId, RETURNED_TO_ORGANIZER],
+  )
+  return r.rows.map((x) => ({
+    id: String(x.id),
+    po_number: String(x.po_number),
+    vendor_id: String(x.vendor_id),
+  }))
+}
+
+// Refuses an action the reopened review does not offer (stock changes, sending back to the buyers): they act on the whole
+// requisition, and the purchase orders already exist.
+async function assertNotReopenedGW(reqId: string, what: string): Promise<void> {
+  const held = await heldPurchaseOrdersGW((sql, params) => query(sql, params), reqId)
+  if (held.length > 0) throw new Error(reopenedNotAvailable(what))
+}
+
+// While a review is reopened, a purchase can be changed only if its vendor's PO is one of the held ones and the purchase has its
+// own PO line (so the change lands on exactly that line). Called inside the caller's transaction.
+async function assertPurchaseInHeldPOGW(
+  client: PoolClient,
+  reqId: string,
+  purchaseId: string,
+): Promise<void> {
+  const held = await heldPurchaseOrdersGW((sql, params) => client.query(sql, params), reqId)
+  if (held.length === 0) return
+  const r = await client.query<{
+    vendor_id: string
+    po_id: string | null
+    po_number: string | null
+  }>(
+    `SELECT plp.vendor_id,
+            (SELECT pl.po_id FROM po_lines pl WHERE pl.purchase_id = plp.id LIMIT 1) AS po_id,
+            (SELECT po.po_number FROM po_lines pl JOIN purchase_orders po ON po.id = pl.po_id
+              WHERE pl.purchase_id = plp.id LIMIT 1) AS po_number
+       FROM po_line_purchases plp WHERE plp.id=$1`,
+    [purchaseId],
+  )
+  const row = r.rows.at(0)
+  if (!row) throw new Error('Purchase entry not found')
+  const added = row.po_id === null
+  // a purchase of an item added in this review has no PO line yet: it must be of a vendor with a held PO
+  if (added) {
+    if (!held.some((h) => h.vendor_id === row.vendor_id))
+      throw new Error(
+        `This purchase is of a vendor whose purchase order was not sent back (${held.map((h) => h.po_number).join(', ')}), so it cannot be changed here`,
+      )
+    return
+  }
+  if (!held.some((h) => h.id === row.po_id))
+    throw new Error(
+      `This purchase is on purchase order ${row.po_number ?? ''}, which was not sent back: only ${held.map((h) => h.po_number).join(', ')} can be changed in this review`,
+    )
+}
+
+// A quantity cannot be lowered below what was already received against its PO line (that would leave more received than ordered).
+// Checked when the organizer edits the purchase, and again when the review is applied.
+async function assertQtyNotBelowReceivedGW(
+  run: Runner,
+  purchaseId: string,
+  nextQty: number,
+): Promise<void> {
+  const r = await run(
+    `SELECT pl.description, pl.qty_received FROM po_lines pl WHERE pl.purchase_id=$1`,
+    [purchaseId],
+  )
+  const row = r.rows.at(0)
+  if (!row) return
+  const received = parseFloat(String(row.qty_received ?? '0'))
+  if (received - nextQty > 0.00005)
+    throw new Error(
+      `"${String(row.description ?? 'The item')}" already has ${received} received, so its quantity cannot go below that. Reverse the receipt first, or keep at least ${received}`,
+    )
+}
+
+// Removing an item in a REOPENED review (playbook #129). The requisition line is the item the organizer sees; behind it are the
+// PO line(s) its purchases became, on the held purchase orders. They can go only if every one of them is on a held PO, nothing is
+// received or invoiced against them, no stock covers part of the item, and each held PO keeps at least one line. The purchases
+// and their receipts go with it, and the project cost booked for those PO lines (a jobsite delivery) is dropped.
+async function removeReviewLineReopenedGW(
+  auth: GWAuth,
+  req: { requisition_number: string },
+  requisitionId: string,
+  lineId: string,
+  reason: string,
+): Promise<Record<string, unknown>> {
+  const client = await pool.connect()
+  let buyers: string[] = []
+  let removedName = ''
+  try {
+    await client.query('BEGIN')
+    const run: Runner = (sql, params) => client.query(sql, params)
+    const locked = await client.query<{ status: string }>(
+      `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+      [requisitionId, auth.companyId],
+    )
+    if (locked.rows.at(0)?.status !== 'organizer_review')
+      throw new Error('Items can be removed only while the requisition is in Organizer Review')
+    const held = await heldPurchaseOrdersGW(run, requisitionId)
+    if (held.length === 0) throw new Error('The review is no longer reopened: reload the page')
+    const heldIds = new Set(held.map((h) => h.id))
+
+    const given = await client.query<{ id: string; origin_line_id: string | null }>(
+      `SELECT id, origin_line_id FROM po_lines WHERE id=$1 AND requisition_id=$2`,
+      [lineId, requisitionId],
+    )
+    const g = given.rows.at(0)
+    if (!g) throw new Error('That line is not part of this requisition')
+    const rootId = g.origin_line_id ?? g.id
+    const rootRes = await client.query<{
+      id: string
+      line_number: number | null
+      description: string | null
+      product_id: string | null
+      qty_ordered: string
+      qty_from_stock: string | null
+      uom: string | null
+      currency_code: string | null
+      unit_price: string | null
+      po_id: string | null
+      review_added_at: string | null
+      review_replaced: unknown[] | null
+    }>(
+      `SELECT id, line_number, description, product_id, qty_ordered, qty_from_stock, uom, currency_code, unit_price,
+              po_id, review_added_at, review_replaced
+         FROM po_lines WHERE id=$1 AND requisition_id=$2 FOR UPDATE`,
+      [rootId, requisitionId],
+    )
+    const root = rootRes.rows.at(0)
+    if (!root) throw new Error('That line is not part of this requisition')
+    const rootName = root.description?.trim()
+    removedName = rootName ? rootName : 'the item'
+    if (parseFloat(root.qty_from_stock ?? '0') > 0)
+      throw new Error(
+        `"${removedName}" is partly covered from stock, so it cannot be removed in this review`,
+      )
+
+    const purchases = await client.query<{
+      id: string
+      bought_by: string | null
+      snapshot: unknown
+    }>(
+      `SELECT plp.id, plp.bought_by,
+              jsonb_build_object(
+                'vendor', v.name, 'qty', plp.qty::text, 'price', ${effectivePriceSql('plp')}::text,
+                'currency', plp.currency_code, 'had_receipt', plp.receipt_attachment_id IS NOT NULL,
+                'bought_by', COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email)
+              ) AS snapshot
+         FROM po_line_purchases plp
+         LEFT JOIN vendors v ON v.id = plp.vendor_id
+         LEFT JOIN users u ON u.id = plp.bought_by
+        WHERE plp.po_line_id=$1 ORDER BY plp.bought_at`,
+      [root.id],
+    )
+    const purchaseIds = purchases.rows.map((p) => p.id)
+    if (purchaseIds.length === 0 && !root.review_added_at)
+      throw new Error(
+        `"${removedName}" has no purchase on a purchase order that was sent back, so it cannot be removed in this review`,
+      )
+    const mapped = await client.query<{ id: string; po_id: string | null }>(
+      `SELECT id, po_id FROM po_lines WHERE purchase_id = ANY($1::uuid[])`,
+      [purchaseIds],
+    )
+    if (!root.review_added_at && mapped.rows.length < purchaseIds.length)
+      throw new Error(
+        `"${removedName}" has a purchase that could not be matched to a purchase order line, so it cannot be removed here`,
+      )
+    if (mapped.rows.some((m) => m.po_id === null || !heldIds.has(m.po_id)))
+      throw new Error(
+        `"${removedName}" is also on a purchase order that was not sent back (only ${held.map((h) => h.po_number).join(', ')} can be changed in this review)`,
+      )
+    const kids = await client.query<{ id: string }>(
+      `SELECT id FROM po_lines WHERE origin_line_id=$1`,
+      [root.id],
+    )
+    const deleteIds = [
+      ...new Set([root.id, ...mapped.rows.map((m) => m.id), ...kids.rows.map((k) => k.id)]),
+    ]
+    const strangerKid = kids.rows.find((k) => !mapped.rows.some((m) => m.id === k.id))
+    if (strangerKid)
+      throw new Error(
+        `"${removedName}" has other lines split from it that are not part of its purchases, so it cannot be removed here`,
+      )
+
+    // Each held PO that loses a line keeps at least one, and so does the requisition.
+    for (const h of held) {
+      const before = await client.query<{ c: string; gone: string }>(
+        `SELECT COUNT(*) AS c, COUNT(*) FILTER (WHERE id = ANY($2::uuid[])) AS gone FROM po_lines WHERE po_id=$1`,
+        [h.id, deleteIds],
+      )
+      const c = parseInt(before.rows[0]?.c ?? '0', 10)
+      const gone = parseInt(before.rows[0]?.gone ?? '0', 10)
+      if (gone > 0 && c - gone <= 0)
+        throw new Error(
+          `Removing "${removedName}" would leave purchase order ${h.po_number} with no items: ask an administrator to cancel the purchase order instead`,
+        )
+    }
+    // Names what really blocks it (a receipt, an invoice, a return ...). The "other lines were split from it" reason does not
+    // apply to lines that are being removed together with it.
+    const blocks = (await lineRemovalBlocks(run, deleteIds, { requisitionId }))
+      .map((b) => ({
+        ...b,
+        reasons: b.reasons.filter((x) => x !== 'other lines were split from it'),
+      }))
+      .filter((b) => b.reasons.length > 0)
+    if (blocks.length > 0)
+      throw new Error(
+        blocks
+          .map((b) => `"${b.description}" can't be removed: ${b.reasons.join('; ')}.`)
+          .join(' '),
+      )
+
+    if (!root.review_added_at) {
+      await client.query(
+        `INSERT INTO requisition_review_removed_lines
+           (requisition_id, company_id, line_number, description, product_id, qty_ordered, qty_from_stock, uom,
+            currency_code, unit_price, purchases, reason, removed_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13)`,
+        [
+          requisitionId,
+          auth.companyId,
+          root.line_number,
+          root.description ?? '',
+          root.product_id,
+          root.qty_ordered,
+          root.qty_from_stock ?? '0',
+          root.uom,
+          root.currency_code,
+          root.unit_price,
+          JSON.stringify([
+            ...(root.review_replaced ?? []),
+            ...purchases.rows.map((p) => p.snapshot),
+          ]),
+          reason,
+          auth.userId,
+        ],
+      )
+    }
+    // the purchases first: po_line_purchases.receipt_attachment_id references document_attachments (playbook #21)
+    if (purchaseIds.length > 0) {
+      await client.query(`DELETE FROM po_line_purchases WHERE id = ANY($1::uuid[])`, [purchaseIds])
+      await client.query(
+        `DELETE FROM document_attachments WHERE entity_type='po_line_purchase' AND entity_id = ANY($1::uuid[])`,
+        [purchaseIds],
+      )
+    }
+    await dropDirectDeliveryCost(client, deleteIds)
+    await detachDeadLineHistory(client, deleteIds)
+    await client.query(`DELETE FROM po_lines WHERE id = ANY($1::uuid[]) AND requisition_id=$2`, [
+      deleteIds,
+      requisitionId,
+    ])
+    await client.query(
+      `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+       VALUES ($1,'organizer_review','organizer_review','review_line_removed',$2,$3)`,
+      [
+        requisitionId,
+        auth.userId,
+        `Removed ${removedName}${root.review_added_at ? ' (added in this review)' : ''}: ${reason}`,
+      ],
+    )
+    await client.query(`UPDATE requisitions SET updated_at=NOW() WHERE id=$1`, [requisitionId])
+    buyers = [...new Set(purchases.rows.flatMap((p) => (p.bought_by ? [p.bought_by] : [])))].filter(
+      (id) => id !== auth.userId,
+    )
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+  void publishEntityChanged(auth.companyId, 'requisition', requisitionId, 'updated')
+  for (const buyerId of buyers) {
+    try {
+      await notifyUserForRequisitionGW(buyerId, requisitionId, {
+        type: 'REQ_REVIEW_LINE_REMOVED',
+        title: 'An item you bought was removed in the review',
+        body: `${req.requisition_number}: ${removedName} was removed. ${reason}`,
+      })
+    } catch (err) {
+      console.error('[review] could not tell the buyer a line was removed', requisitionId, err)
+    }
+  }
+  return getRequisitionForReturn(requisitionId)
+}
+
+// When a reopened review is approved (or confirmed), the organizer's changes are applied to the HELD purchase orders in place,
+// so each keeps its number (playbook #129): a changed purchase updates its own PO line (found through po_lines.purchase_id), an
+// item added in the review becomes a new line of the PO of its vendor, the totals are recalculated and the jobsite cost booked
+// for a delivered line is re-priced. Then each PO leaves the held status: back to Finance review, or to Goods received when a
+// quantity was raised or an item added (the extra quantity needs a new receipt). Runs inside forkChildPurchaseOrders'
+// transaction, so it commits or rolls back with the requisition's move to Sourcing.
+async function reapplyHeldPurchaseOrdersGW(
+  client: PoolClient,
+  reqId: string,
+  auth: GWAuth,
+  held: HeldPOGW[],
+  organizerId: string | null,
+  action: 'confirm_review' | 'approve_review',
+): Promise<void> {
+  const counts = await reviewCountsGW(reqId, organizerId, client)
+  for (const po of held) {
+    const purchases = await client.query<{
+      id: string
+      po_line_id: string
+      qty: string
+      actual_unit_price: string
+      discounted_unit_price: string | null
+      currency_code: string
+    }>(
+      `SELECT plp.id, plp.po_line_id, plp.qty, plp.actual_unit_price, plp.discounted_unit_price, plp.currency_code
+         FROM po_line_purchases plp JOIN po_lines root ON root.id = plp.po_line_id
+        WHERE root.requisition_id=$1 AND plp.vendor_id=$2 ORDER BY plp.bought_at, plp.id`,
+      [reqId, po.vendor_id],
+    )
+    const lines = await client.query<{
+      id: string
+      purchase_id: string | null
+      qty_ordered: string
+      unit_price: string | null
+      currency_code: string
+      qty_received: string | null
+      description: string | null
+    }>(
+      `SELECT id, purchase_id, qty_ordered, unit_price, currency_code, qty_received, description
+         FROM po_lines WHERE po_id=$1 FOR UPDATE`,
+      [po.id],
+    )
+    const lineByPurchase = new Map(
+      lines.rows.flatMap((l) => (l.purchase_id ? [[l.purchase_id, l] as const] : [])),
+    )
+    let needsReceipt = false
+    let changed = 0
+    let added = 0
+    const repriceIds: string[] = []
+    for (const pu of purchases.rows) {
+      const qty = parseFloat(pu.qty)
+      const price = effectiveUnitPrice(pu.actual_unit_price, pu.discounted_unit_price)
+      const line = lineByPurchase.get(pu.id)
+      if (line) {
+        const cur = {
+          qty: parseFloat(line.qty_ordered),
+          price: parseFloat(line.unit_price ?? '0'),
+          currency: line.currency_code,
+        }
+        const next = { qty, price, currency: pu.currency_code }
+        if (!purchaseChangesLine(cur, next)) continue
+        const received = parseFloat(line.qty_received ?? '0')
+        if (received - qty > 0.00005)
+          throw new Error(
+            `"${line.description ?? 'The item'}" already has ${received} received, so its quantity cannot go below that`,
+          )
+        await client.query(
+          `UPDATE po_lines SET qty_ordered=$2, unit_price=$3, actual_unit_price=$3, currency_code=$4,
+                  total_price=$2::numeric * $3::numeric
+            WHERE id=$1`,
+          [line.id, qty, price, pu.currency_code],
+        )
+        repriceIds.push(line.id)
+        changed++
+        if (lineNeedsNewReceipt({ oldQty: cur.qty, newQty: qty, received, added: false }))
+          needsReceipt = true
+      } else {
+        // an item added in this review: its own requisition line becomes a line of this PO
+        const root = await client.query<{ id: string; po_id: string | null }>(
+          `SELECT id, po_id FROM po_lines WHERE id=$1 FOR UPDATE`,
+          [pu.po_line_id],
+        )
+        if (!root.rows[0] || root.rows[0].po_id !== null)
+          throw new Error(
+            `A purchase of this vendor could not be matched to a line of purchase order ${po.po_number}`,
+          )
+        const next = await client.query<{ n: number }>(
+          `SELECT COALESCE(MAX(line_number), 0) + 1 AS n FROM po_lines WHERE po_id=$1`,
+          [po.id],
+        )
+        await client.query(
+          `UPDATE po_lines
+              SET po_id=$2, line_number=$3, qty_ordered=$4, unit_price=$5, actual_unit_price=$5,
+                  initial_unit_price=COALESCE(initial_unit_price,$5), currency_code=$6, total_price=$4::numeric * $5::numeric,
+                  purchase_id=$7, review_added_at=NULL, review_added_by=NULL
+            WHERE id=$1`,
+          [pu.po_line_id, po.id, next.rows[0]?.n ?? 1, qty, price, pu.currency_code, pu.id],
+        )
+        added++
+        needsReceipt = true
+      }
+    }
+    await repriceDirectDeliveryCost(client, repriceIds)
+    await recalcPOTotalsGW(client, po.id)
+    // Finance audits the PO again from scratch
+    await client.query(
+      `UPDATE po_lines SET audit_status='pending', audit_note=NULL WHERE po_id=$1`,
+      [po.id],
+    )
+    const target = returnTargetStatus(needsReceipt)
+    await poTransition(
+      client,
+      po.id,
+      RETURNED_TO_ORGANIZER,
+      target,
+      target === 'goods_received' ? 'reopen_receiving' : 'resubmit_to_finance',
+      auth,
+      `Review ${action === 'approve_review' ? 'approved again' : 'confirmed'}: ${changed} line(s) changed, ${added} added` +
+        (target === 'goods_received'
+          ? '. A quantity was raised or an item added: record a receipt for the extra, then send it to Finance review again'
+          : ''),
+    )
+  }
+  if (counts.added > 0 || counts.removed > 0) await refreshApprovedTotalsGW(client, reqId)
+  // The review is over: its marks no longer count toward a later one.
+  await client.query(
+    `UPDATE po_line_purchases plp
+        SET review_original_qty=NULL, review_original_price=NULL, review_original_currency=NULL,
+            review_edited_by=NULL, review_edited_at=NULL
+       FROM po_lines pl WHERE pl.id = plp.po_line_id AND pl.requisition_id=$1`,
+    [reqId],
+  )
+  await client.query(
+    `UPDATE requisition_review_removed_lines SET closed_at=NOW() WHERE requisition_id=$1 AND closed_at IS NULL`,
+    [reqId],
+  )
+}
+
 // What the review has to account for (lib/requisitionReview.ts decides what it means). Passing the transaction's own client
 // reads inside that transaction.
 async function reviewCountsGW(
@@ -2850,7 +3297,7 @@ async function reviewCountsGW(
                       COUNT(*) FILTER (WHERE $2::uuid IS NOT NULL AND plp.bought_by = $2::uuid) AS organizer_bought,
                       COUNT(*) FILTER (WHERE plp.over_tolerance AND plp.tolerance_approved_by IS NULL) AS unsigned_tolerance,
                       (SELECT COUNT(*) FROM po_lines al WHERE al.requisition_id = $1 AND al.review_added_at IS NOT NULL) AS added,
-                      (SELECT COUNT(*) FROM requisition_review_removed_lines rl WHERE rl.requisition_id = $1) AS removed,
+                      (SELECT COUNT(*) FROM requisition_review_removed_lines rl WHERE rl.requisition_id = $1 AND rl.closed_at IS NULL) AS removed,
                       (SELECT COUNT(*) FROM po_lines sl2 WHERE sl2.requisition_id = $1 AND sl2.review_stock_qty IS NOT NULL) AS stocked
                  FROM po_line_purchases plp JOIN po_lines pl ON pl.id = plp.po_line_id
                 WHERE pl.requisition_id = $1`
@@ -3236,6 +3683,25 @@ async function forkChildPurchaseOrders(
           AND flagged_at IS NOT NULL AND flag_resolved_at IS NULL`,
       [reqId, auth.userId],
     )
+    // A review reopened for purchase orders Finance sent back (playbook #129): they already exist, so nothing is created. The
+    // changes are applied to those purchase orders in place (same number) and the requisition returns to Sourcing.
+    const heldPOs = await heldPurchaseOrdersGW((sql, params) => client.query(sql, params), reqId)
+    if (heldPOs.length > 0) {
+      await reapplyHeldPurchaseOrdersGW(client, reqId, auth, heldPOs, req.organizer_id, action)
+      await reqTransition(
+        client,
+        reqId,
+        fromStatus,
+        'sourcing',
+        action,
+        auth,
+        opts.notes,
+        opts.actorPosition,
+      )
+      await client.query('COMMIT')
+      void publishEntityChanged(auth.companyId, 'requisition', reqId, 'updated')
+      return
+    }
     // An item added or removed in the review changes what the requisition was approved for, so the approved-totals
     // snapshot that reports read is brought in step with the lines (per currency), in the same transaction as the POs.
     // A quantity the organizer changed above or below what a line was ordered for is settled first (the ordered quantity
@@ -3379,17 +3845,27 @@ async function forkChildPurchaseOrders(
             await client.query(
               `UPDATE po_lines
                SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4, actual_unit_price=$4,
-                   initial_unit_price=COALESCE(initial_unit_price,$4), currency_code=$5, total_price=$6
+                   initial_unit_price=COALESCE(initial_unit_price,$4), currency_code=$5, total_price=$6,
+                   purchase_id=$8
                WHERE id=$7`,
-              [childId, nextLineNumber, qty, price, entry.currency_code, totalPrice, line.id],
+              [
+                childId,
+                nextLineNumber,
+                qty,
+                price,
+                entry.currency_code,
+                totalPrice,
+                line.id,
+                entry.id,
+              ],
             )
           } else {
             await client.query(
               `INSERT INTO po_lines
                  (po_id, requisition_id, line_number, description, product_id, qty_ordered, unit_price,
                   initial_unit_price, actual_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
-                  approved_unit_price, qty_from_stock, in_stock, origin_line_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
+                  approved_unit_price, qty_from_stock, in_stock, origin_line_id, purchase_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14,$15)`,
               [
                 childId,
                 reqId,
@@ -3405,6 +3881,7 @@ async function forkChildPurchaseOrders(
                 line.cost_center_id,
                 line.approved_unit_price,
                 line.id,
+                entry.id,
               ],
             )
           }
@@ -4949,6 +5426,9 @@ async function poHasNewVocabBuyRecordsGW(poId: string): Promise<boolean> {
   const r = await query<{ has_records: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id WHERE pl.po_id=$1
+       UNION ALL
+       -- a line made from a purchase carries its link (migration 337), also when the purchase is attached to the line it was split from
+       SELECT 1 FROM po_lines pl WHERE pl.po_id=$1 AND pl.purchase_id IS NOT NULL
      ) AS has_records`,
     [poId],
   )
@@ -12629,7 +13109,7 @@ export const resolvers = {
                         0 AS now,
                         0 AS purchases
                    FROM requisition_review_removed_lines rl, jsonb_array_elements(rl.purchases) rp
-                  WHERE rl.requisition_id = $1
+                  WHERE rl.requisition_id = $1 AND rl.closed_at IS NULL
                ) x
               GROUP BY x.cur ORDER BY x.cur`,
             [args.id],
@@ -12653,7 +13133,7 @@ export const resolvers = {
                     rl.unit_price, rl.purchases, rl.reason, rl.removed_at,
                     COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS removed_by_name
                FROM requisition_review_removed_lines rl LEFT JOIN users u ON u.id = rl.removed_by
-              WHERE rl.requisition_id = $1 AND rl.company_id = $2
+              WHERE rl.requisition_id = $1 AND rl.company_id = $2 AND rl.closed_at IS NULL
               ORDER BY rl.removed_at, rl.id`,
             [args.id, ctx.auth.companyId],
           ),
@@ -12689,6 +13169,22 @@ export const resolvers = {
         )
         const stockNeeded = reviewNeedsStoreKeeper(counts)
         const stock = stockRow.rows.at(0)
+        // The purchase orders Finance sent back, when this review was reopened for them (migration 337)
+        const reopenedRows = await query<{
+          id: string
+          po_number: string
+          vendor_id: string
+          vendor_name: string | null
+          reason: string | null
+          at: string | null
+        }>(
+          `SELECT po.id, po.po_number, po.vendor_id, v.name AS vendor_name,
+                  po.returned_to_organizer_reason AS reason, po.returned_to_organizer_at AS at
+             FROM purchase_orders po LEFT JOIN vendors v ON v.id = po.vendor_id
+            WHERE po.requisition_id = $1 AND po.company_id = $2 AND po.status = 'returned_to_organizer'
+            ORDER BY po.po_number`,
+          [args.id, ctx.auth.companyId],
+        )
         review = {
           needs_approval: reviewNeedsApproval(counts),
           approval_reason: reviewApprovalReason(counts),
@@ -12728,6 +13224,7 @@ export const resolvers = {
             last?.action === 'reject_review' && reqStatus === 'organizer_review'
               ? { reason: last.notes, by_name: last.by_name, at: last.created_at }
               : null,
+          reopened_pos: reopenedRows.rows,
           totals: reviewTotals.rows.map((t) => ({
             currency_code: t.currency_code,
             was: t.was,
@@ -35542,6 +36039,8 @@ const phase5MutationResolvers = {
       // scope check and before anything is written, so the person is told why and nothing is queued.
       if (requisitionEditNeedsApproval(reqStatus) && !isAdminRole)
         throw new Error(approvedEditRefusal('requisition'))
+      // While Finance's send-back is being reviewed, the changes are made in the review, not through a second route (playbook #129)
+      await assertNotReopenedGW(reqId, 'An edit request')
 
       if (!isAdminRole) {
         const scope = await query(
@@ -35678,6 +36177,11 @@ const phase5MutationResolvers = {
     // Same rule as for a requisition above: after approval only an administrator may change a PO or ask for a change.
     if (poEditNeedsApproval(poStatus) && !isAdminRole)
       throw new Error(approvedEditRefusal('purchase order'))
+    // A PO Finance sent back is changed in its requisition's review, not through a second route (playbook #129)
+    if (poStatus === RETURNED_TO_ORGANIZER)
+      throw new Error(
+        "This purchase order was sent back to the organizer: the changes are made in its requisition's Organizer Review",
+      )
 
     if (!isAdminRole) {
       const scope = await query(
@@ -38271,6 +38775,8 @@ const phase5MutationResolvers = {
         throw new Error(
           "Only the requisition's organizer, or an admin, can change a purchase in the review",
         )
+      // A review reopened for a purchase order Finance sent back changes only that PO's purchases (playbook #129)
+      await assertPurchaseInHeldPOGW(client, reqId, args.purchaseId)
 
       const row = await client.query<{
         id: string
@@ -38331,6 +38837,8 @@ const phase5MutationResolvers = {
       )
         throw new Error('That is what the purchase already says: nothing to change')
 
+      // In a reopened review the PO line already exists: a quantity below what was received against it is refused here
+      await assertQtyNotBelowReceivedGW((sql, params) => client.query(sql, params), p.id, next.qty)
       // A quantity above or below what the line was ordered for is allowed (playbook #116): the organizer is correcting what
       // was really bought, and a PO Admin approves it. When the purchase orders are made, the line's ordered quantity follows
       // the purchases (more bought raises it, less is an accepted shortfall; settleLineQuantity), so nothing is refused here.
@@ -38496,6 +39004,16 @@ const phase5MutationResolvers = {
       )
       if (locked.rows.at(0)?.status !== 'organizer_review')
         throw new Error('Items can be added only while the requisition is in Organizer Review')
+      // In a review reopened for a purchase order Finance sent back, an item can only be added to one of those purchase
+      // orders, so it needs a vendor that already has one (a new vendor would need a new PO number: not offered here).
+      const heldForAdd = await heldPurchaseOrdersGW(
+        (sql, params) => client.query(sql, params),
+        i.requisitionId,
+      )
+      if (heldForAdd.length > 0 && !heldForAdd.some((h) => h.vendor_id === i.vendorId))
+        throw new Error(
+          `In this review an item can only be added to a purchase order that was sent back (${heldForAdd.map((h) => h.po_number).join(', ')}): choose that PO's vendor`,
+        )
       const uom = (i.uom ?? '').trim() || 'unit'
       const lineRes = await client.query<{ id: string }>(
         `INSERT INTO po_lines
@@ -38572,6 +39090,12 @@ const phase5MutationResolvers = {
       throw new Error(
         "Only the requisition's organizer, or an admin, can remove an item in the review",
       )
+    // A review reopened for a purchase order Finance sent back removes the item from that PO's lines (playbook #129)
+    if (
+      (await heldPurchaseOrdersGW((sql, params) => query(sql, params), args.requisitionId)).length >
+      0
+    )
+      return removeReviewLineReopenedGW(auth, req, args.requisitionId, args.lineId, reason)
 
     const client = await pool.connect()
     let buyersToTell: string[] = []
@@ -38759,6 +39283,7 @@ const phase5MutationResolvers = {
     const qty = Number(args.qty) || 0
     if (!(qty > 0)) throw new Error('qty must be greater than 0')
     const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    await assertNotReopenedGW(args.requisitionId, 'Taking an item from stock')
     const isAdmin = await hasProcurementAuthorityGW(auth)
     if (
       !canActOnReview({
@@ -38861,6 +39386,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    await assertNotReopenedGW(args.requisitionId, 'Putting stock back')
     const isAdmin = await hasProcurementAuthorityGW(auth)
     if (
       !canActOnReview({
@@ -38978,6 +39504,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    await assertNotReopenedGW(args.requisitionId, 'Using stock instead of the purchases')
     const isAdmin = await hasProcurementAuthorityGW(auth)
     if (
       !canActOnReview({
@@ -39273,6 +39800,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    await assertNotReopenedGW(args.requisitionId, 'Undoing a use of stock')
     const isAdmin = await hasProcurementAuthorityGW(auth)
     if (
       !canActOnReview({
@@ -39686,6 +40214,7 @@ const phase5MutationResolvers = {
     const reason = args.reason.trim()
     if (!reason) throw new Error('reason is required')
     const req = await loadRequisitionInReviewGW(args.requisitionId, auth, 'organizer_review')
+    await assertNotReopenedGW(args.requisitionId, 'Sending the requisition back to the buyers')
     const isAdmin = await hasProcurementAuthorityGW(auth)
     if (
       !canActOnReview({
@@ -39908,7 +40437,7 @@ const phase5MutationResolvers = {
 
     const blockingChild = await query<{ po_number: string; status: string }>(
       `SELECT po_number, status FROM purchase_orders
-       WHERE requisition_id=$1 AND status IN ('goods_received','finance_review','payment_pending','closed','completed')
+       WHERE requisition_id=$1 AND status IN ('goods_received','finance_review','returned_to_organizer','payment_pending','closed','completed')
        LIMIT 1`,
       [args.id],
     )
@@ -41303,6 +41832,188 @@ const phase5MutationResolvers = {
       })
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+    return getPOForReturn(args.id)
+  },
+
+  // Finance sends a child PO that failed its review back to the requisition's Organizer Review (migration 337, playbook #129).
+  // The PO is not undone: it keeps its number and its lines, is locked in `returned_to_organizer`, and the requisition reopens
+  // its review for this PO's purchases. When that review is approved again the changes are applied to this same PO. Same
+  // permission as Return for Correction (failPOAudit), a reason is required.
+  returnPOToOrganizer: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error(
+        'Finance approval permission required to return a purchase order to the organizer',
+      )
+    const reason = args.reason.trim()
+    if (!reason) throw new Error('reason is required')
+    const client = await pool.connect()
+    let reqId = ''
+    let poNumber = ''
+    let reqNumber = ''
+    let organizerId: string | null = null
+    try {
+      await client.query('BEGIN')
+      const run: Runner = (sql, params) => client.query(sql, params)
+      const poRes = await client.query<{
+        id: string
+        po_number: string
+        status: string
+        vendor_id: string | null
+        requisition_id: string | null
+      }>(
+        `SELECT id, po_number, status, vendor_id, requisition_id FROM purchase_orders
+          WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [args.id, auth.companyId],
+      )
+      const po = poRes.rows.at(0)
+      if (!po) throw new Error('PO not found')
+      poNumber = po.po_number
+      if (po.status !== 'finance_review')
+        throw new Error(
+          `A purchase order can be returned to the organizer only from Finance review (this one is '${po.status}')`,
+        )
+      if (!po.requisition_id || !po.vendor_id)
+        throw new Error('Only a purchase order made from a requisition can go back to its review')
+      reqId = po.requisition_id
+      const rq = await client.query<{
+        status: string
+        organizer_id: string | null
+        requisition_number: string
+      }>(
+        `SELECT status, organizer_id, requisition_number FROM requisitions WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+        [reqId, auth.companyId],
+      )
+      const r = rq.rows.at(0)
+      if (!r) throw new Error('Requisition not found')
+      reqNumber = r.requisition_number
+      organizerId = r.organizer_id
+      const alreadyHeld = (await heldPurchaseOrdersGW(run, reqId)).length > 0
+      if (r.status === 'sourcing') {
+        // the first PO of this requisition to come back: the review reopens
+      } else if (r.status === 'organizer_review' && alreadyHeld) {
+        // another PO of the same requisition was sent back earlier: this one joins the same open review
+      } else if (r.status === 'review_approval' && alreadyHeld) {
+        throw new Error(
+          `Requisition ${reqNumber} is waiting for a PO Admin's approval of an earlier send-back: wait for that decision, then send this one back`,
+        )
+      } else {
+        throw new Error(
+          `Requisition ${reqNumber} is in '${r.status}', so purchase order ${poNumber} cannot be sent back to its review now`,
+        )
+      }
+
+      // Every purchase of this vendor must have its own PO line (po_lines.purchase_id) and every PO line a purchase, or a change
+      // in the review could not land on exactly the right line.
+      const purchases = await client.query<{ id: string; description: string | null }>(
+        `SELECT plp.id, root.description FROM po_line_purchases plp JOIN po_lines root ON root.id = plp.po_line_id
+          WHERE root.requisition_id=$1 AND plp.vendor_id=$2`,
+        [reqId, po.vendor_id],
+      )
+      if (purchases.rows.length === 0)
+        throw new Error(
+          'This purchase order has no recorded purchases, so there is nothing to review',
+        )
+      const lines = await client.query<{
+        id: string
+        purchase_id: string | null
+        description: string | null
+      }>(`SELECT id, purchase_id, description FROM po_lines WHERE po_id=$1`, [po.id])
+      const loose = lines.rows.find((l) => !l.purchase_id)
+      if (loose)
+        throw new Error(
+          `"${loose.description ?? 'A line'}" was added to this purchase order after it was created, so it cannot go back to the review. Ask an administrator to change it with an edit request`,
+        )
+      const unmatched = purchases.rows.find((p) => !lines.rows.some((l) => l.purchase_id === p.id))
+      if (unmatched)
+        throw new Error(
+          `The purchase of "${unmatched.description ?? 'an item'}" could not be matched to a line of this purchase order, so it cannot go back to the review. Ask an administrator to change it with an edit request`,
+        )
+
+      // An edit request approved after the PO was made may have changed a line without touching its purchase. The review shows
+      // the purchase, so bring it level with what the PO line says now (the price that counts; a discount shown as such is
+      // dropped only where the two disagree), and start the review with no change recorded for these purchases.
+      await client.query(
+        `UPDATE po_line_purchases plp
+            SET qty = pl.qty_ordered, actual_unit_price = pl.unit_price, discounted_unit_price = NULL,
+                currency_code = pl.currency_code
+           FROM po_lines pl
+          WHERE pl.purchase_id = plp.id AND pl.po_id = $1
+            AND (plp.qty <> pl.qty_ordered
+                 OR ${effectivePriceSql('plp')} <> pl.unit_price
+                 OR plp.currency_code <> pl.currency_code)`,
+        [po.id],
+      )
+      await client.query(
+        `UPDATE po_line_purchases plp
+            SET review_original_qty=NULL, review_original_price=NULL, review_original_currency=NULL,
+                review_edited_by=NULL, review_edited_at=NULL
+           FROM po_lines pl WHERE pl.purchase_id = plp.id AND pl.po_id = $1`,
+        [po.id],
+      )
+
+      await poTransition(
+        client,
+        po.id,
+        'finance_review',
+        RETURNED_TO_ORGANIZER,
+        'return_to_organizer',
+        auth,
+        reason,
+      )
+      await client.query(
+        `UPDATE purchase_orders
+            SET returned_to_organizer_at=NOW(), returned_to_organizer_by=$2, returned_to_organizer_reason=$3
+          WHERE id=$1`,
+        [po.id, auth.userId, reason],
+      )
+      // a new round starts with no store keeper sign-off
+      await client.query(
+        `UPDATE requisitions SET stock_review_status=NULL, stock_review_by=NULL, stock_review_at=NULL, stock_review_reason=NULL WHERE id=$1`,
+        [reqId],
+      )
+      if (r.status === 'sourcing') {
+        await reqTransition(
+          client,
+          reqId,
+          'sourcing',
+          'organizer_review',
+          'reopen_review',
+          auth,
+          `${poNumber}: ${reason}`,
+        )
+      } else {
+        await client.query(
+          `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+           VALUES ($1,'organizer_review','organizer_review','reopen_review',$2,$3)`,
+          [reqId, auth.userId, `${poNumber}: ${reason}`],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    if (organizerId) {
+      try {
+        await notifyUserForRequisitionGW(organizerId, reqId, {
+          type: 'REQ_REVIEW_REQUIRED',
+          title: `Finance sent ${poNumber} back to your review`,
+          body: `${reqNumber}: ${poNumber} failed Finance review: ${reason}. Make the changes in Organizer Review and submit them for approval; the purchase order keeps its number`,
+        })
+      } catch (err) {
+        console.error('[review] could not tell the organizer a PO was sent back', args.id, err)
+      }
+    }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+    void publishEntityChanged(auth.companyId, 'requisition', reqId, 'updated')
     return getPOForReturn(args.id)
   },
 
