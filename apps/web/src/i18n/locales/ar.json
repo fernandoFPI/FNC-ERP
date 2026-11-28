@@ -602,7 +602,11 @@
       "auditChecked": "البنود المفحوصة: {{done}} من {{total}}",
       "auditAllOk": "تم فحص كل البنود وهي سليمة",
       "auditFlaggedN": "مُعلَّم: {{n}}",
-      "onlyAnAdminAfterApproval": "يمكن للمسؤول فقط تعديل أمر الشراء بعد الموافقة عليه. اطلب من المسؤول إجراء التعديل."
+      "onlyAnAdminAfterApproval": "يمكن للمسؤول فقط تعديل أمر الشراء بعد الموافقة عليه. اطلب من المسؤول إجراء التعديل.",
+      "returnToOrganizerLines": "ما هي البنود الخاطئة؟",
+      "returnToOrganizerLinesHint": "حدّد كل بند فشل واكتب ما الخطأ فيه. سيرى المنظّم هذه البنود مظلّلة مع سببك عند إعادة فتح المراجعة.",
+      "returnToOrganizerLineReason": "ما الخطأ في هذا البند؟",
+      "returnToOrganizerLineReasonPlaceholder": "مثال: الفاتورة تذكر 45 دولارًا والشراء مسجّل بـ 40"
     },
     "editReq": {
       "appliedAutomatically": "طُبّق فورًا: لم تتم الموافقة على أمر الشراء بعد، فلم تلزم مراجعة.",
@@ -1357,7 +1361,9 @@
       "quotedNote": "(السعر المعروض {{price}})",
       "addDiscountLabel": "السعر بعد الخصم (اختياري)",
       "addDiscountCurrencyAria": "عملة السعر بعد الخصم",
-      "addDiscountHint": "إذا منح المورّد خصمًا فأدخل سعر الوحدة بعده. هذا هو السعر المحتسب."
+      "addDiscountHint": "إذا منح المورّد خصمًا فأدخل سعر الوحدة بعده. هذا هو السعر المحتسب.",
+      "statusFinanceFlagged": "علّمته المالية",
+      "financeFlagBy": "علّمته المالية ({{name}})"
     },
     "expenseStatus": {
       "draft": "مسودة",

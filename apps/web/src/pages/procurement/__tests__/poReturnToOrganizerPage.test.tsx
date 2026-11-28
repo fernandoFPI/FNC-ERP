@@ -214,6 +214,13 @@ describe('the Return to Organizer button in the Finance review bar', () => {
 })
 
 describe('the dialog', () => {
+  // the overall reason box is the last text box: the ticked lines' own reason boxes come before it
+  const lastTextbox = (dialog: HTMLElement): HTMLElement => {
+    const boxes = within(dialog).getAllByRole('textbox')
+    const last = boxes.at(-1)
+    if (!last) throw new Error('no text box in the dialog')
+    return last
+  }
   async function openDialog() {
     mockPO('finance_review')
     await openPO()
@@ -233,17 +240,89 @@ describe('the dialog', () => {
     expect(mutationCalls.get('ReturnPOToOrganizer')).not.toHaveBeenCalled()
   })
 
-  it('sends the trimmed reason with the order id', async () => {
+  it('sends the trimmed reasons with the order id and the lines that were ticked', async () => {
     const dialog = await openDialog()
-    const box = within(dialog).getByRole('textbox')
-    fireEvent.change(box, { target: { value: '  Invoice shows 45 USD  ' } })
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /#2 Item l2/ }))
+    fireEvent.change(within(dialog).getByPlaceholderText(/the invoice says 45 USD/i), {
+      target: { value: '  Invoice says 45, we paid 40  ' },
+    })
+    fireEvent.change(lastTextbox(dialog), { target: { value: '  Invoice shows 45 USD  ' } })
     const confirm = within(dialog).getByRole('button', { name: 'Return to Organizer' })
     expect(confirm).toBeEnabled()
     fireEvent.click(confirm)
     expect(mutationCalls.get('ReturnPOToOrganizer')).toHaveBeenCalledTimes(1)
     expect(mutationCalls.get('ReturnPOToOrganizer')).toHaveBeenCalledWith({
-      variables: { id: 'po-1', reason: 'Invoice shows 45 USD' },
+      variables: {
+        id: 'po-1',
+        reason: 'Invoice shows 45 USD',
+        lineFlags: [{ lineId: 'l2', reason: 'Invoice says 45, we paid 40' }],
+      },
     })
+  })
+
+  it('lists every line of the order, none ticked to begin with', async () => {
+    const dialog = await openDialog()
+    const box = within(dialog).getByTestId('return-flag-lines')
+    expect(within(box).getByText('Which lines are wrong?')).toBeInTheDocument()
+    const ticks = within(box).getAllByRole('checkbox')
+    expect(ticks).toHaveLength(2)
+    expect(ticks.every((c) => !(c as HTMLInputElement).checked)).toBe(true)
+    expect(within(dialog).queryByPlaceholderText(/the invoice says 45 USD/i)).toBeNull()
+  })
+
+  it('will not send without a ticked line, or with a ticked line that has no reason', async () => {
+    const dialog = await openDialog()
+    const confirm = within(dialog).getByRole('button', { name: 'Return to Organizer' })
+    fireEvent.change(within(dialog).getByRole('textbox'), {
+      target: { value: 'Prices do not match' },
+    })
+    // an overall reason alone is not enough: Finance must say which lines
+    expect(confirm).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /#1 Item l1/ }))
+    // ticked, but its reason is empty
+    expect(confirm).toBeDisabled()
+    fireEvent.change(within(dialog).getByPlaceholderText(/the invoice says 45 USD/i), {
+      target: { value: '   ' },
+    })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(within(dialog).getByPlaceholderText(/the invoice says 45 USD/i), {
+      target: { value: 'wrong price' },
+    })
+    expect(confirm).toBeEnabled()
+    // unticking it takes it out again: the box is empty, its reason box is gone and there is nothing left to send
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /#1 Item l1/ }))
+    expect(within(dialog).getByRole('checkbox', { name: /#1 Item l1/ })).not.toBeChecked()
+    expect(within(dialog).queryByPlaceholderText(/the invoice says 45 USD/i)).toBeNull()
+    expect(confirm).toBeDisabled()
+    expect(mutationCalls.get('ReturnPOToOrganizer')).not.toHaveBeenCalled()
+  })
+
+  it('will not send a ticked line with its reason but no overall reason', async () => {
+    const dialog = await openDialog()
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /#1 Item l1/ }))
+    fireEvent.change(within(dialog).getByPlaceholderText(/the invoice says 45 USD/i), {
+      target: { value: 'wrong price' },
+    })
+    const confirm = within(dialog).getByRole('button', { name: 'Return to Organizer' })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(lastTextbox(dialog), { target: { value: 'Prices do not match' } })
+    expect(confirm).toBeEnabled()
+  })
+
+  it('starts with the lines Finance already flagged in the audit, with the note it wrote', async () => {
+    mockPO('finance_review', {
+      lines: [{ ...line('l1'), audit_status: 'flagged', audit_note: 'Price is off' }, line('l2')],
+    })
+    await openPO()
+    const open = returnButton()
+    if (!open) throw new Error('no Return to Organizer button')
+    fireEvent.click(open)
+    const dialog = screen.getByRole('dialog', { name: 'Return to Organizer' })
+    expect(within(dialog).getByRole('checkbox', { name: /#1 Item l1/ })).toBeChecked()
+    expect(within(dialog).getByRole('checkbox', { name: /#2 Item l2/ })).not.toBeChecked()
+    expect(within(dialog).getByPlaceholderText(/the invoice says 45 USD/i)).toHaveValue(
+      'Price is off',
+    )
   })
 
   it('Cancel closes it without sending', async () => {

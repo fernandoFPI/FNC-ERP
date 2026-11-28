@@ -203,6 +203,10 @@ export const REQUISITION_QUERY = gql`
           review_original_qty
           review_original_price
           review_original_currency
+          # Finance flagged this purchase's line when it sent the purchase order back to the organizer
+          finance_flag_reason
+          finance_flagged_by
+          finance_flagged_at
         }
       }
       # The organizer review (migration 329): filled only while the requisition is in organizer_review or review_approval.

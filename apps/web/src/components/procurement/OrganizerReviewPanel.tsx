@@ -65,6 +65,10 @@ export interface ReviewPurchaseRow {
   review_original_qty?: string | null
   review_original_price?: string | null
   review_original_currency?: string | null
+  /** Finance flagged this purchase's line when it sent its purchase order back to the organizer: why, who, when. Null otherwise. */
+  finance_flag_reason?: string | null
+  finance_flagged_by?: string | null
+  finance_flagged_at?: string | null
   /** The vendor, which decides (with the purchase orders Finance sent back) whether the purchase can be changed in a reopened review. */
   vendor_id?: string | null
 }
@@ -203,6 +207,33 @@ function QuotedNote({ purchase }: { purchase: ReviewPurchaseRow }) {
     >
       {t('req.review.quotedNote', { price: fmt(purchase.actual_unit_price) })}
     </span>
+  )
+}
+/** Why Finance flagged this purchase's line: red edge, who flagged it, the reason in plain sight. Nothing for an unflagged purchase. */
+function FinanceFlagNote({ purchase }: { purchase: ReviewPurchaseRow }) {
+  const { t } = useTranslation()
+  const { theme } = useTheme()
+  if (!purchase.finance_flag_reason) return null
+  return (
+    <div
+      data-testid="finance-flag-note"
+      style={{
+        borderInlineStart: `4px solid ${theme.danger}`,
+        background: `${theme.danger}12`,
+        borderRadius: '6px',
+        padding: '6px 10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+      }}
+    >
+      <div style={{ fontSize: '12px', fontWeight: 600, color: theme.danger }}>
+        {t('req.review.financeFlagBy', { name: purchase.finance_flagged_by ?? '—' })}
+      </div>
+      <div style={{ fontSize: '13px', color: theme.textPrimary, overflowWrap: 'anywhere' }}>
+        {purchase.finance_flag_reason}
+      </div>
+    </div>
   )
 }
 function lineNameOf(l: ReviewLineRow): string {
@@ -598,6 +629,7 @@ export function ReviewPurchasesCell({
               ...(i > 0 ? { borderTop: `1px solid ${theme.border}`, paddingTop: '8px' } : {}),
             }}
           >
+            <FinanceFlagNote purchase={p} />
             {isEditing ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <LinePriceInput
@@ -1004,6 +1036,12 @@ export type ReviewChip =
   | 'notBought'
   | 'flagged'
   | 'flagAnswered'
+  | 'financeFlagged'
+
+/** The purchases of a line that Finance flagged when it sent the purchase order back, with the reason. Empty for any other line. */
+export function financeFlaggedPurchases(line: ReviewLineRow): ReviewPurchaseRow[] {
+  return (line.purchases ?? []).filter((p) => !!p.finance_flag_reason)
+}
 
 /** An approver flagged this line when sending the review back, and it is not settled yet. */
 export function openReviewFlag(line: ReviewLineRow): boolean {
@@ -1031,6 +1069,8 @@ export function reviewLineChips(line: ReviewLineRow): ReviewChip[] {
   }
   // an open flag comes first: it is what the organizer has to answer
   if (openReviewFlag(line)) chips.unshift(line.flag_addressed_at ? 'flagAnswered' : 'flagged')
+  // Finance's flag on a returned purchase order comes before everything: it is why the review was reopened
+  if (financeFlaggedPurchases(line).length > 0) chips.unshift('financeFlagged')
   return chips
 }
 
@@ -1045,6 +1085,7 @@ const CHIP_VARIANT: Record<ReviewChip, 'danger' | 'info' | 'warning' | 'success'
   notBought: 'neutral',
   flagged: 'danger',
   flagAnswered: 'warning',
+  financeFlagged: 'danger',
 }
 const CHIP_LABEL: Record<ReviewChip, string> = {
   attention: 'req.review.statusAttention',
@@ -1057,6 +1098,7 @@ const CHIP_LABEL: Record<ReviewChip, string> = {
   notBought: 'req.review.statusNotBought',
   flagged: 'req.review.statusFlagged',
   flagAnswered: 'req.review.statusFlagAnswered',
+  financeFlagged: 'req.review.statusFinanceFlagged',
 }
 
 /** The line's status chips, in the order that matters most first. */
@@ -1435,8 +1477,15 @@ export function ReviewPhoneList({
                 gap: '6px',
                 padding: '12px',
                 borderRadius: '12px',
-                border: `1px solid ${l.review_added_at ? theme.accentSolid : theme.border}`,
-                background: theme.bgSurface,
+                border: `1px solid ${
+                  financeFlaggedPurchases(l).length > 0
+                    ? theme.danger
+                    : l.review_added_at
+                      ? theme.accentSolid
+                      : theme.border
+                }`,
+                background:
+                  financeFlaggedPurchases(l).length > 0 ? `${theme.danger}0c` : theme.bgSurface,
                 color: theme.textPrimary,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
@@ -1459,6 +1508,15 @@ export function ReviewPhoneList({
                 </span>
               </div>
               <div style={{ fontSize: '13px', color: theme.textSecondary }}>{oneLine(l)}</div>
+              {financeFlaggedPurchases(l).map((p) => (
+                <div
+                  key={p.id}
+                  data-testid="finance-flag-card-reason"
+                  style={{ fontSize: '13px', color: theme.danger, overflowWrap: 'anywhere' }}
+                >
+                  {p.finance_flag_reason}
+                </div>
+              ))}
               <div
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
