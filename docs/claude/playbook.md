@@ -4530,3 +4530,47 @@ Don't re-derive, check these first.
     **Traps met.** (1) Classification guards fail until a new status is placed: the edit-approval test (`po-edit-request-approval-gate`, a held PO is "needs approval" but refuses every edit request outright, so it has its own list) and `projectPoSummary.test.ts`, which read the status list from migration 258 (now 337). (2) My cancel test passed by luck: the OTHER PO at Finance review also blocks a cancel and the message names whichever row comes first; the mutation run caught it, the test now puts the other PO at `bought`. (3) Two mutations survived because one fixture broke two checks at once (a line with no purchase is both "loose" and "unmatched"); one fixture per check. (4) `RowMenu` was drawn empty for a line with nothing to offer; it is drawn only when there are items. (5) A test that finds a row by a line's description fails when the row shows its product name. (6) The mutation runner in PowerShell 5.1 with `$ErrorActionPreference='Stop'` dies on vitest's stderr: switch it to Continue around the native call, and parse `Tests  N failed | M passed` rather than the Test Files line. (7) A shell heredoc ate quotes and backslashes again (#69): scripts that hold either go through the file tool.
     **Not done, on purpose or not yet.** A new vendor (needs a new PO number), stock changes, and a PO whose lines were added by an edit request after it was made cannot go through this; they use the administrator's edit request. The approver's bar and My Queue were not re-worded for a reopened review (they still say purchase orders are created); the organizer's notice reuses `REQ_REVIEW_REQUIRED` (the worker needs no new case). Not verified in a browser, in Arabic or on a phone. Apply migration 337 to dev AND test; rebuild `packages/workflow`; restart the gateway. Also found while testing the receipt path: `poHasNewVocabBuyRecordsGW` (which decides whether Send to Finance Audit goes to `finance_review` or the older `finance_audit`) looked only at purchases attached to lines already on the PO, so a PO whose remaining lines were split from another line fell to the OLD status; it now also trusts `po_lines.purchase_id`. And a scoped lint fix (ESLint's own fix ranges, only on my changed lines) cut `<div` to `<di` in the 7,500-line PO page once: after any scoped fix run `tsc` and read the diff, never trust "0 findings". (8) A shell heredoc died on quotes in a long script again: file tool for anything with quotes or backslashes (#69).
     Tests: `services/gateway/tests/po-return-to-organizer-review.test.ts` (real Postgres through the real mutations, 28, including a real jobsite delivery of the extra quantity followed by Send to Finance Audit; 26 safeguards mutation-checked, the two that survived first were fixed with one test per check), `apps/web` `components/procurement/__tests__/OrganizerReviewReopened.test.tsx` (18) and `pages/procurement/__tests__/poReturnToOrganizerPage.test.tsx` (13; 15 mutations killed). Related to #44, #45, #65, #112, #115, #116, #122, #33.
+
+130. **A tab computed from logs: who is blamed, which date counts, and a permission whose key the test database did not have.**
+    The request: "a performance tab on each employee to monitor how many times their requisitions get rejected ... and anything else we can
+    monitor". Before building, the data on production (read-only) decided the design: 447 requisitions by 16 organizers, 87 ever sent back; the
+    requisition log already says who did every step, so nothing needs storing. A clickable mockup with invented figures was agreed first (#128),
+    then built as drawn. It is a read: `employeePerformance(employeeId, days)` in the gateway (`lib/employeePerformance.ts`) runs about ten
+    queries against the logs on every open; there is no migration and nothing to backfill, so past months are right from day one.
+    Rules worth keeping.
+    (a) *Blame goes to the person who did the rejected step.* A requisition sent back is counted against its ORGANIZER in "their requisitions", but
+    in "their work that others sent back" the rejection is credited to the actor of the latest earlier log row that moved the requisition INTO the
+    status the rejection came from (`CREDITED_STEP_SQL`, a LEFT JOIN LATERAL). A rejection at price verification therefore lands on whoever
+    submitted market pricing, not on the organizer, and a rejection at approval lands on whoever submitted price verification. Rows whose from and
+    to status are the same (`edit_applied`, `review_*`) are not steps, so an edit between a submission and its rejection cannot steal the
+    credit (tested). `send_back_to_buying` is the organizer sending it back himself and is not a rejection; `reopen_review` is Finance returning a
+    PO and has its own bar ("Returned by Finance"). The labels on the first mockup ("price verification", "pending approval") were illustrative; the
+    real buckets are where the requisition was sent TO (draft, inventory check, store pricing, market pricing, organizer review, Finance return).
+    (b) *Which date counts.* The requisition figures are a COHORT: requisitions created in the period, with every send-back they ever had, so a rate
+    is "of the 31 made in these 90 days, 9 were sent back" and can never exceed 100 %. "Work others sent back" and the approver section are EVENTS
+    dated by the decision. A rate always carries its count and a rate over zero things is a dash, never 0 %.
+    (c) *Who may open it*, decided once on the server (`canViewEmployeePerformanceGW`) and read by the page through `canViewEmployeePerformance`
+    so the tab is offered exactly when the query would answer: an administrator, a holder of the new key `hr.employees.performance` (view), or the
+    employee's direct manager (`employees.manager_id` is the caller's own employee). The employee does not get their own tab, and the employee
+    must belong to the caller's company (another company's id answers "no", and every query repeats the company filter: a test plants the same
+    people's records in a second company and expects them to count for nothing).
+    (d) *A new permission key needs the permissions table row before anyone can be granted it.* `user_permissions.permission_key` has a foreign key
+    to `permissions`, so a test (or a script) that grants `hr.employees.performance` fails with `user_permissions_permission_key_fkey` on any
+    database where `pnpm seed:permissions` has not run since the registry changed. CI runs the seeds; locally run it against `fnc_erp_test` AND
+    `fnc_erp_dev`. Both copies of the registry were edited (`packages/permissions/src/registry.ts`, `apps/web/src/lib/permissionRegistry.ts`).
+    Found and NOT changed: the Employee page's Salary tab gates on `hr.employees.manage_salary` / `view_salary`, keys that are in no registry, so only
+    administrators can ever pass them (same class as #48: a key with no grant path).
+    (e) *Tests that pass first time are not yet tests.* All 23 gateway and 28 web tests passed on the first run, so the mutation check came before any
+    claim: it found two things the fixtures did not exercise (a deleted requisition of the employee's, and the approver section excluding a Finance
+    `reopen_review` it did not itself do), both got a fixture and a test. An "unused" mutation that survives can be genuinely equivalent: dropping the
+    `reopen_review` exclusion from the work query changes nothing because `WORK_KEY_BY_REJECTED_FROM` has no entry for its status.
+    (f) *Test-fixture traps met.* `companies` needs `legal_name`; `employee_advances` points at `chart_of_accounts` twice; one parameter used both
+    as a value and inside a `CASE` needs a cast on every use (`$4::varchar`, #57); log rows written in one test share a clock, so order them with
+    explicit offsets (`NOW() - make_interval(hours => n)`), never by insertion. The TabBar renders plain buttons (no `tab` role), so a test finds the
+    tabs with `getByRole('button', { name })`.
+    Mutation-checked: 32 on the gateway rules (blame, company scope, period, audit, claims, approver, access) and 19 on the page, all killed except one gateway mutation that is equivalent (the work query's `reopen_review` exclusion, which `WORK_KEY_BY_REJECTED_FROM` already makes redundant). Not done, by design: no score and no ranking between people; "waiting on them now" for approvers (it would copy each stage's gate, #24); attendance
+    and leave (they live on their own tabs); nothing was looked at in a browser, in Arabic on a real page, or on a phone, and the SQL has been run only
+    against the dev and test databases, not production. Apply nothing to the database for this change except `pnpm seed:permissions` (the deploy
+    pipeline runs it). Tests: `services/gateway/tests/employee-performance.test.ts` (real Postgres through the real resolvers), web
+    `pages/hr/employees/__tests__/EmployeePerformanceTab.test.tsx`, `EmployeeDetailPerformanceTab.test.tsx` and `lib/__tests__/employeePerformance.test.ts`.
+    Related to #24, #48, #128, #34.
