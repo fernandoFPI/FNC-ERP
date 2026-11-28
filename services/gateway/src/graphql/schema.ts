@@ -314,6 +314,8 @@
     sendPOToAudit(id: ID!): PurchaseOrder!
     passPOAudit(id: ID!): PurchaseOrder!
     failPOAudit(id: ID!, notes: String): PurchaseOrder!
+    # Migration 337: Finance sends a child PO that failed review back to the requisition's Organizer Review. The PO keeps its number.
+    returnPOToOrganizer(id: ID!, reason: String!): PurchaseOrder!
     setPOLineAuditStatus(poId: ID!, lineId: ID!, auditStatus: String!, auditNote: String): POLine!
     setPOLineAccounting(poId: ID!, lineId: ID!, glAccountId: ID, costCenterId: ID): POLine!
     markPOLineBought(poId: ID!, lineId: ID!, bought: Boolean!): POLine!
@@ -529,6 +531,9 @@
     po_number: String!
     vendor_name: String
     status: String!
+    # Migration 337: set while Finance has sent the PO back to its requisition's Organizer Review, and why (the last send-back is kept)
+    returned_to_organizer_at: String
+    returned_to_organizer_reason: String
     priority: String!
     # NULL for a PO whose lines span more than one currency, and for a PO with
     # no lines (recalcPOTotalsGW, migration 308): there is no single correct
@@ -3052,6 +3057,18 @@
     caller_can_decide_stock: Boolean!
     last_rejection: RequisitionReviewRejection
     totals: [RequisitionReviewTotal!]!
+    # Migration 337: the purchase orders Finance sent back, when this review was reopened for them. Only their purchases can be
+    # changed in it; empty for an ordinary review. Nullable so a failure cannot null the whole review.
+    reopened_pos: [RequisitionReviewReopenedPO!]
+  }
+
+  type RequisitionReviewReopenedPO {
+    id: ID!
+    po_number: String!
+    vendor_id: ID!
+    vendor_name: String
+    reason: String
+    at: String
   }
 
   type RequisitionReviewRemovedLine {

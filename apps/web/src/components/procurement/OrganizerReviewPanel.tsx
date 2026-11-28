@@ -65,6 +65,8 @@ export interface ReviewPurchaseRow {
   review_original_qty?: string | null
   review_original_price?: string | null
   review_original_currency?: string | null
+  /** The vendor, which decides (with the purchase orders Finance sent back) whether the purchase can be changed in a reopened review. */
+  vendor_id?: string | null
 }
 
 export interface ReviewLineRow {
@@ -74,6 +76,8 @@ export interface ReviewLineRow {
   product_name?: string | null
   /** Set on a line the organizer added in this review (migration 330). */
   review_added_at?: string | null
+  /** Set on a line made from a purchase when the purchase orders were created; a reopened review shows the original line only. */
+  origin_line_id?: string | null
   /** The catalog item, when there is one: a custom item has no stock to take from. */
   product_id?: string | null
   /** What the line was ordered for, and what stock already covers (the inventory check, or an earlier take in this review). */
@@ -143,8 +147,19 @@ export interface ReviewData {
   removed_lines?: ReviewRemovedLine[] | null
   caller_can_edit: boolean
   caller_can_approve: boolean
+  /** The purchase orders Finance sent back when this review was reopened for them (migration 337); empty for an ordinary review. */
+  reopened_pos?: ReviewReopenedPO[] | null
   last_rejection?: { reason?: string | null; by_name?: string | null; at?: string | null } | null
   totals: { currency_code: string; was: string; now: string; purchases: number }[]
+}
+
+export interface ReviewReopenedPO {
+  id: string
+  po_number: string
+  vendor_id: string
+  vendor_name?: string | null
+  reason?: string | null
+  at?: string | null
 }
 
 export interface ReviewRequisition {
@@ -248,6 +263,9 @@ export function useOrganizerReview(
   /** The review is on: the requisition is in one of the two review statuses and the server sent the review. */
   const active = !!requisition && !!review && (inReview || inApproval)
   const requisitionId = requisition?.id ?? ''
+  // A review reopened for purchase orders Finance sent back (migration 337): nothing new is created, so the wording differs
+  const reopenedPos = review?.reopened_pos ?? []
+  const reopened = reopenedPos.length > 0
 
   const [editing, setEditing] = useState<{
     id: string
@@ -302,7 +320,9 @@ export function useOrganizerReview(
     onError: failed,
   })
   const [confirmReview, { loading: confirming }] = useMutation(CONFIRM_REVIEW, {
-    onCompleted: done(t('req.review.toastConfirmed')),
+    onCompleted: done(
+      reopened ? t('req.review.toastConfirmedReopened') : t('req.review.toastConfirmed'),
+    ),
     onError: failed,
   })
   const [submitReview, { loading: submitting }] = useMutation(SUBMIT_REVIEW_FOR_APPROVAL, {
@@ -310,7 +330,9 @@ export function useOrganizerReview(
     onError: failed,
   })
   const [approveReview, { loading: approving }] = useMutation(APPROVE_REVIEW, {
-    onCompleted: done(t('req.review.toastApproved')),
+    onCompleted: done(
+      reopened ? t('req.review.toastApprovedReopened') : t('req.review.toastApproved'),
+    ),
     onError: failed,
   })
   const [approveStock, { loading: approvingStock }] = useMutation(APPROVE_REVIEW_STOCK, {
@@ -361,9 +383,15 @@ export function useOrganizerReview(
   })
 
   const canEdit = inReview && !!review?.caller_can_edit
-  const lines = [...(requisition?.lines ?? [])].sort(
-    (a, b) => (a.line_number ?? 0) - (b.line_number ?? 0),
-  )
+  // A review reopened for purchase orders Finance sent back (migration 337): only those orders' purchases can be changed, nothing is
+  // taken from stock and nothing goes back to the buyers. The server enforces all of it; the screen just does not offer what it refuses.
+  const heldVendorIds = new Set(reopenedPos.map((p) => p.vendor_id))
+  const canChangePurchase = (p: { vendor_id?: string | null }) =>
+    canEdit && (!reopened || (!!p.vendor_id && heldVendorIds.has(p.vendor_id)))
+  const lines = [...(requisition?.lines ?? [])]
+    // the lines the fork made from the purchases are shown through their original line
+    .filter((l) => !(reopened && l.origin_line_id))
+    .sort((a, b) => (a.line_number ?? 0) - (b.line_number ?? 0))
   // Purchases only: what the "send back" dialog can remove.
   const purchaseRows = lines.flatMap((l) =>
     (l.purchases ?? []).map((p) => ({ ...p, lineName: lineNameOf(l) })),
@@ -457,6 +485,9 @@ export function useOrganizerReview(
     inReview,
     inApproval,
     canEdit,
+    reopened,
+    reopenedPos,
+    canChangePurchase,
     showActions,
     onChanged,
     organizerName: requisition?.organizerName ?? '',
@@ -670,14 +701,14 @@ export function ReviewPurchasesCell({
                   style={{
                     display: 'grid',
                     gridTemplateColumns:
-                      ctl.canEdit && p.receipt_file_id
+                      ctl.canChangePurchase(p) && p.receipt_file_id
                         ? 'repeat(2, minmax(0, 1fr))'
                         : 'minmax(0, 1fr)',
                     gap: '8px',
                     alignItems: 'center',
                   }}
                 >
-                  {ctl.canEdit && (
+                  {ctl.canChangePurchase(p) && (
                     <ActionButton
                       fullWidth
                       variant="outline"
@@ -731,7 +762,7 @@ export function ReviewPurchasesCell({
                     {p.vendor_name ?? '—'} · {t('req.review.boughtBy')}: {p.bought_by_name ?? '—'}
                   </div>
                 </div>
-                {ctl.canEdit && (
+                {ctl.canChangePurchase(p) && (
                   <ActionButton
                     variant="outline"
                     size="sm"
@@ -1067,6 +1098,18 @@ export function reviewLineMenuItems(
 ): MenuItem[] {
   const f = lineFacts(line)
   const items: MenuItem[] = []
+  if (ctl.reopened) {
+    if (f.purchases.length > 0 && f.purchases.every((p) => ctl.canChangePurchase(p)))
+      items.push({
+        label: t('req.review.removeItem'),
+        tone: 'danger',
+        onClick: () => {
+          ctl.setRemoveLineReason('')
+          ctl.setRemoveLineFor({ id: line.id, name: f.lineName })
+        },
+      })
+    return items
+  }
   if (f.purchases.length > 0 && f.hasProduct && f.toCover > 0.0001)
     items.push({
       label: t('req.review.useStock'),
@@ -1210,7 +1253,7 @@ export function ReviewActionsCell({ ctl, line }: { ctl: ReviewController; line: 
             ctl.toggleExpanded(line.id)
           }}
         />
-        {ctl.canEdit && !editingHere && (
+        {ctl.canEdit && !editingHere && items.length > 0 && (
           <RowMenu items={items} ariaLabel={t('req.review.moreActions', { item: f.lineName })} />
         )}
       </div>
@@ -1573,13 +1616,17 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
           stackButtonsOnPhone
           collapsible
           title={t('req.review.barReview')}
-          hint={t('req.review.barReviewHint')}
+          hint={
+            ctl.reopened ? t('req.review.barReviewHintReopened') : t('req.review.barReviewHint')
+          }
           status={
             review.caller_can_edit ? (
               <span style={{ fontSize: '13px', color: theme.textSecondary }}>
                 {review.needs_approval
                   ? t('req.review.barNeedsApproval', { reason: review.approval_reason ?? '' })
-                  : t('req.review.barCanConfirm')}
+                  : ctl.reopened
+                    ? t('req.review.barCanConfirmReopened')
+                    : t('req.review.barCanConfirm')}
               </span>
             ) : (
               <span style={{ fontSize: '13px', color: theme.textSecondary }}>
@@ -1590,16 +1637,18 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
         >
           {review.caller_can_edit && (
             <>
-              <ActionButton
-                variant="outline"
-                onClick={() => {
-                  ctl.setReason('')
-                  ctl.setRemoveIds([])
-                  ctl.setSendBackOpen(true)
-                }}
-              >
-                {t('req.review.sendBack')}
-              </ActionButton>
+              {!ctl.reopened && (
+                <ActionButton
+                  variant="outline"
+                  onClick={() => {
+                    ctl.setReason('')
+                    ctl.setRemoveIds([])
+                    ctl.setSendBackOpen(true)
+                  }}
+                >
+                  {t('req.review.sendBack')}
+                </ActionButton>
+              )}
               {review.needs_approval ? (
                 <ActionButton
                   variant="solid"
@@ -1620,7 +1669,7 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
                     void ctl.confirmReview({ variables: { requisitionId: requisition.id } })
                   }
                 >
-                  {t('req.review.confirm')}
+                  {ctl.reopened ? t('req.review.confirmReopened') : t('req.review.confirm')}
                 </ActionButton>
               )}
             </>
@@ -1639,7 +1688,13 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
                 ? t('req.review.barStock')
                 : t('req.review.barApproval')
           }
-          hint={canDecideStock ? t('req.review.barStockHint') : t('req.review.barApprovalHint')}
+          hint={
+            canDecideStock
+              ? t('req.review.barStockHint')
+              : ctl.reopened
+                ? t('req.review.barApprovalHintReopened')
+                : t('req.review.barApprovalHint')
+          }
           status={
             barStatusText ? (
               <span
@@ -1693,7 +1748,7 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
                   void ctl.approveReview({ variables: { requisitionId: requisition.id } })
                 }
               >
-                {t('req.review.approve')}
+                {ctl.reopened ? t('req.review.approveReopened') : t('req.review.approve')}
               </ActionButton>
             </>
           )}
@@ -1706,6 +1761,38 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
     <>
       <Card style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {ctl.reopened && (
+            <div
+              data-testid="reopened-banner"
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                border: `1px solid ${theme.warning}`,
+                background: `${theme.warning}1f`,
+                color: theme.textPrimary,
+                fontSize: '13px',
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: '4px' }}>
+                {t('req.review.reopenedTitle')}
+              </div>
+              <ul style={{ margin: 0, paddingInlineStart: '18px' }}>
+                {ctl.reopenedPos.map((p) => (
+                  <li key={p.id}>
+                    {t('req.review.reopenedPo', {
+                      po: p.po_number,
+                      vendor: p.vendor_name ?? '—',
+                      reason: p.reason ?? '—',
+                    })}
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: '6px', color: theme.textSecondary }}>
+                {t('req.review.reopenedRules')}
+              </div>
+            </div>
+          )}
           <div
             style={{
               display: 'flex',
@@ -1723,8 +1810,12 @@ export function OrganizerReviewPanel({ ctl, barSlot }: OrganizerReviewPanelProps
                 {inApproval
                   ? review.caller_can_approve
                     ? t('req.review.introApprover', { name: organizerName })
-                    : t('req.review.introWaitingApproval')
-                  : t('req.review.introReview')}
+                    : ctl.reopened
+                      ? t('req.review.introWaitingApprovalReopened')
+                      : t('req.review.introWaitingApproval')
+                  : ctl.reopened
+                    ? t('req.review.introReviewReopened')
+                    : t('req.review.introReview')}
               </div>
             </div>
             {canEdit && (

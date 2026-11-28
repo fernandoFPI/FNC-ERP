@@ -168,6 +168,8 @@ export const REQUISITION_QUERY = gql`
         review_added_at
         review_stock_qty
         review_can_undo_stock
+        # a line made from a purchase when the purchase orders were created (the fork); the reopened review shows the original line only
+        origin_line_id
         review_replaced {
           vendor
           qty
@@ -243,6 +245,15 @@ export const REQUISITION_QUERY = gql`
           reason
         }
         caller_can_decide_stock
+        # the purchase orders Finance sent back when this review was reopened for them (migration 337)
+        reopened_pos {
+          id
+          po_number
+          vendor_id
+          vendor_name
+          reason
+          at
+        }
         last_rejection {
           reason
           by_name

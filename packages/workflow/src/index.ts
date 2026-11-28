@@ -225,6 +225,9 @@ export type POStatus =
   | 'finance_review'
   | 'payment_pending'
   | 'closed'
+  // Finance sent a failed-review child PO back to the requisition's Organizer Review (migration 337, playbook #129). The PO is
+  // locked here, keeps its number, and leaves only when that review is approved again.
+  | 'returned_to_organizer'
 
 export type POAction =
   | 'submit_to_inventory_check'
@@ -245,6 +248,9 @@ export type POAction =
   | 'send_to_audit'
   | 'fail_audit'
   | 'pass_audit'
+  | 'return_to_organizer'
+  | 'resubmit_to_finance'
+  | 'reopen_receiving'
   | 'complete'
   | 'approve_stock_issuance'
   | 'cancel'
@@ -334,6 +340,11 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     { from: 'goods_received', to: 'finance_review', action: 'send_to_audit' },
     { from: 'finance_review', to: 'goods_received', action: 'fail_audit' },
     { from: 'finance_review', to: 'payment_pending', action: 'pass_audit' },
+    // Finance sends the PO back to the organizer's review; when the review is approved again the PO returns to Finance review, or to
+    // Goods received when the review raised a quantity or added an item (that extra quantity needs a new receipt).
+    { from: 'finance_review', to: 'returned_to_organizer', action: 'return_to_organizer' },
+    { from: 'returned_to_organizer', to: 'finance_review', action: 'resubmit_to_finance' },
+    { from: 'returned_to_organizer', to: 'goods_received', action: 'reopen_receiving' },
     { from: 'payment_pending', to: 'closed', action: 'complete' },
 
     // Cancellation (any active non-terminal state)
@@ -461,6 +472,7 @@ export type RequisitionAction =
   | 'approve_review'
   | 'reject_review'
   | 'send_back_to_buying'
+  | 'reopen_review'
   | 'complete'
   | 'cancel'
   | 'delete'
@@ -529,6 +541,8 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
     { from: 'review_approval', to: 'sourcing', action: 'approve_review' },
     { from: 'review_approval', to: 'organizer_review', action: 'reject_review' },
     { from: 'organizer_review', to: 'items_bought', action: 'send_back_to_buying' },
+    // Finance sent a child PO back (playbook #129): the review reopens for that PO's purchases only; nothing is un-forked.
+    { from: 'sourcing', to: 'organizer_review', action: 'reopen_review' },
     { from: 'sourcing', to: 'completed', action: 'complete' },
 
     ...REQUISITION_CANCELLABLE.map((s) => ({

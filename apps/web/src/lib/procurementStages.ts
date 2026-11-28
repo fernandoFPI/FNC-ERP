@@ -29,6 +29,7 @@ const PO_STAGE_BY_STATUS: Partial<Record<string, number>> = {
   received: 3,
   finance_audit: 4,
   finance_review: 4,
+  returned_to_organizer: 4,
   invoiced: 4,
   payment_pending: 5,
 }
